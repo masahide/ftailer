@@ -1,0 +1,112 @@
+package core
+
+import (
+	"os"
+	"path"
+	"path/filepath"
+	"sort"
+	"time"
+
+	"github.com/boltdb/bolt"
+)
+
+const (
+	recExt = ".rec"
+	fixExt = ".fixed"
+	delay  = 10 * time.Second
+)
+
+type DB struct {
+	Path string
+	Name string
+	Time time.Time
+	*bolt.DB
+	ref int //参照カウンタ
+	fix bool
+}
+
+func (d *DB) put(record Record, pos Positon) error {
+	err := d.Update(func(tx *bolt.Tx) error {
+		if err := record.Put(tx, pos); err != nil {
+			return err
+		}
+		return pos.Put(tx)
+	})
+	return err
+}
+
+func (db *DB) open() error {
+	if db.DB != nil {
+		db.ref++
+		return nil
+	}
+	filePath := db.makeFilePath()
+	os.MkdirAll(filePath, 0755)
+	fp := path.Join(filePath, db.makeFileName())
+	var err error
+	db.DB, err = bolt.Open(fp+recExt, 0600, nil)
+	if err != nil {
+		return err
+	}
+	db.ref++
+	return db.DB.Update(func(tx *bolt.Tx) error {
+		// Create a bucket.
+		if err = createRecordBucket(tx); err != nil {
+			return err
+		}
+		if err = createPosBucket(tx); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+func (db *DB) Close(fix bool) error {
+	if db.DB == nil {
+		return nil
+	}
+	if fix {
+		db.fix = true
+	}
+	db.ref--
+	if db.ref <= 0 {
+		if err := db.DB.Close(); err != nil {
+			return err
+		}
+		db.DB = nil
+		if db.fix {
+			// mv recExt fixExt
+			fileName := path.Join(db.makeFilePath(), db.makeFileName())
+			if err := os.Rename(fileName+recExt, fileName+fixExt); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (db *DB) recGlob(pattern string) (matches []string, err error) {
+	matches, err = filepath.Glob(path.Join(db.Path, "*", "*"+recExt))
+	if err != nil {
+		return
+	}
+	sort.Strings(matches)
+	return
+}
+
+func makeFilePath(filePath, fileName string, t time.Time) string {
+	return path.Join(filePath, fileName, t.Format("20060102"))
+}
+func makeFileName(t time.Time) string {
+	return t.Format("150405")
+}
+
+func (db *DB) makeFilePath() string {
+	return makeFilePath(db.Path, db.Name, db.Time)
+}
+func (db *DB) makeFileName() string {
+	return makeFileName(db.Time)
+}
+
+func (r *DBpool) makeFilePath(t time.Time) string {
+	return makeFilePath(r.Path, r.Name, t)
+}
