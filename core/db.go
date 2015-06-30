@@ -23,7 +23,7 @@ type DB struct {
 	fix bool
 }
 
-func (d *DB) put(record Record, pos Positon) error {
+func (d *DB) put(record Record, pos Position) error {
 	err := d.Update(func(tx *bolt.Tx) error {
 		if err := record.Put(tx, pos); err != nil {
 			return err
@@ -33,7 +33,7 @@ func (d *DB) put(record Record, pos Positon) error {
 	return err
 }
 
-func (d *DB) GetPositon() (pos Positon, err error) {
+func (d *DB) GetPositon() (pos Position, err error) {
 	err = d.View(func(tx *bolt.Tx) error {
 		pos, err = GetPositon(tx)
 		return err

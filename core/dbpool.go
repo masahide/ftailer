@@ -51,7 +51,7 @@ func (r *DBpool) isOpen(t time.Time) *DB {
 }
 
 // Put
-func (r *DBpool) Put(record Record, pos Positon) error {
+func (r *DBpool) Put(record Record, pos Position) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	baseTime := record.Time.Truncate(r.Interval)
@@ -109,7 +109,7 @@ func (r *DBpool) autoClose(t time.Time) {
 
 // open
 
-func (r *DBpool) Init() (pos *Positon, err error) {
+func (r *DBpool) Init() (pos *Position, err error) {
 	r.dbs = make(map[time.Time]DB, 0)
 	db := &DB{Path: r.Path, Name: r.Name}
 	dbfiles, err := RecGlob(db)
@@ -118,7 +118,7 @@ func (r *DBpool) Init() (pos *Positon, err error) {
 		if err = db.open(); err != nil {
 			return
 		}
-		var p Positon
+		var p Position
 		if p, err = db.GetPositon(); err != nil {
 			return nil, err
 		}

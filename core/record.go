@@ -28,11 +28,11 @@ var (
 	ErrNotFoundKey = errors.New("Not found key.")
 )
 
-func makeKey(t time.Time, pos Positon, compress byte) []byte {
+func makeKey(t time.Time, pos Position, compress byte) []byte {
 	return []byte(fmt.Sprintf("%s_%s_%016x_%c", t.Format(time.RFC3339Nano), pos.CreateAt.Format(time.RFC3339), pos.Offset, compress))
 }
 
-func (r Record) Put(tx *bolt.Tx, pos Positon) error {
+func (r Record) Put(tx *bolt.Tx, pos Position) error {
 	c := byte(plain)
 	if len(r.Data) >= CompressSize {
 		if err := r.Compress(); err != nil {
