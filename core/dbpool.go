@@ -51,7 +51,7 @@ func (r *DBpool) isOpen(t time.Time) *DB {
 }
 
 // Put
-func (r *DBpool) Put(record Record, pos Position) error {
+func (r *DBpool) Put(record Record, pos *Position) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	baseTime := record.Time.Truncate(r.Interval)

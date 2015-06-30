@@ -1,4 +1,4 @@
-package tail
+package ftail
 
 import (
 	"log"
@@ -6,29 +6,30 @@ import (
 	"time"
 
 	"github.com/masahide/ftailer/core"
-	astail "github.com/masahide/tail"
+	"github.com/masahide/tail"
 	"golang.org/x/net/context"
 )
 
-type TailConfig struct {
+type FTailConfig struct {
 	Name     string
 	Path     string
 	BufDir   string
 	Interval time.Duration
 }
 
-type Tail struct {
+type FTail struct {
 }
 
-var tailConfig = astail.Config{
+var tailConfig = tail.Config{
 	Follow:      true,
 	ReOpen:      true,
 	Poll:        true,
-	MaxLineSize: 16 * 1024 * 1024,
+	OpenNotify:  true,
+	MaxLineSize: 16 * 1024 * 1024, // 16MB
 }
 
-func Start(ctx context.Context, c TailConfig) error {
-	t, err := astail.TailFile(c.Path, tailConfig)
+func Start(ctx context.Context, c FTailConfig) error {
+	t, err := tail.TailFile(c.Path, tailConfig)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -53,6 +54,7 @@ func Start(ctx context.Context, c TailConfig) error {
 		case <-ctx.Done():
 			// キャンセル処理
 			return ctx.Err()
+		case pos.CreateAt = <-t.OpenTime:
 		case line := <-t.Lines:
 			pos.Offset, err = t.Tell()
 			if err != nil {
