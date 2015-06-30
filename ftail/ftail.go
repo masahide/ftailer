@@ -20,7 +20,7 @@ type FTailConfig struct {
 type FTail struct {
 }
 
-var tailConfig = tail.Config{
+var tailDefaultConfig = tail.Config{
 	Follow:      true,
 	ReOpen:      true,
 	Poll:        true,
@@ -29,10 +29,6 @@ var tailConfig = tail.Config{
 }
 
 func Start(ctx context.Context, c FTailConfig) error {
-	t, err := tail.TailFile(c.Path, tailConfig)
-	if err != nil {
-		log.Fatalln(err)
-	}
 	rec, err := core.NewRecorder(c.BufDir, c.Name, c.Interval)
 	if err != nil {
 		log.Fatalln(err)
@@ -49,10 +45,17 @@ func Start(ctx context.Context, c FTailConfig) error {
 			Offset:   0,
 		}
 	}
+	conf := tailDefaultConfig
+	conf.Location = &tail.SeekInfo{Offset: pos.Offset}
+	t, err := tail.TailFile(c.Path, conf)
+	if err != nil {
+		log.Fatalln(err)
+	}
 	for {
 		select {
 		case <-ctx.Done():
 			// キャンセル処理
+			rec.AllClose()
 			return ctx.Err()
 		case pos.CreateAt = <-t.OpenTime:
 		case line := <-t.Lines:

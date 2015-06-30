@@ -2,6 +2,7 @@ package core
 
 import (
 	"errors"
+	"log"
 	"sync"
 	"time"
 )
@@ -91,6 +92,17 @@ func (r *DBpool) Close(t time.Time, fix bool) error {
 		delete(r.dbs, t)
 	}
 	return nil
+}
+
+// Close
+func (r *DBpool) AllClose() {
+	for k, db := range r.dbs {
+		if err := db.Close(false); err != nil {
+			log.Printf("Close err:%s", err)
+		}
+		delete(r.dbs, k)
+	}
+	r.dbs = nil
 }
 
 func (r *DBpool) autoClose(t time.Time) {
