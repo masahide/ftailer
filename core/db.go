@@ -3,8 +3,6 @@ package core
 import (
 	"os"
 	"path"
-	"path/filepath"
-	"sort"
 	"time"
 
 	"github.com/boltdb/bolt"
@@ -33,6 +31,14 @@ func (d *DB) put(record Record, pos Positon) error {
 		return pos.Put(tx)
 	})
 	return err
+}
+
+func (d *DB) GetPositon() (pos Positon, err error) {
+	err = d.View(func(tx *bolt.Tx) error {
+		pos, err = GetPositon(tx)
+		return err
+	})
+	return pos, err
 }
 
 func (db *DB) open() error {
@@ -82,15 +88,6 @@ func (db *DB) Close(fix bool) error {
 		}
 	}
 	return nil
-}
-
-func (db *DB) recGlob(pattern string) (matches []string, err error) {
-	matches, err = filepath.Glob(path.Join(db.Path, "*", "*"+recExt))
-	if err != nil {
-		return
-	}
-	sort.Strings(matches)
-	return
 }
 
 func makeFilePath(filePath, fileName string, t time.Time) string {

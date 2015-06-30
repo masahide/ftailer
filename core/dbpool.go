@@ -109,6 +109,21 @@ func (r *DBpool) autoClose(t time.Time) {
 
 // open
 
-func (r *DBpool) Init() Positon {
+func (r *DBpool) Init() (pos *Positon, err error) {
 	r.dbs = make(map[time.Time]DB, 0)
+	db := &DB{Path: r.Path, Name: r.Name}
+	dbfiles, err := RecGlob(db)
+	for _, f := range dbfiles {
+		db.Time = f.Time
+		if err = db.open(); err != nil {
+			return
+		}
+		var p Positon
+		if p, err = db.GetPositon(); err != nil {
+			return nil, err
+		}
+		pos = &p
+		r.autoClose(db.Time)
+	}
+	return
 }

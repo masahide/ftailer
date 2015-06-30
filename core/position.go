@@ -8,10 +8,10 @@ import (
 )
 
 const (
-	posBucketName = "positon"
+	posBucketName = "position"
 )
 
-type Positon struct {
+type Position struct {
 	Name     string
 	CreateAt time.Time
 	Offset   int64
@@ -22,7 +22,7 @@ func createPosBucket(tx *bolt.Tx) error {
 	return err
 }
 
-func (p Positon) Put(tx *bolt.Tx) error {
+func (p Position) Put(tx *bolt.Tx) error {
 	var err error
 	b := tx.Bucket([]byte(posBucketName))
 	if err = b.Put([]byte("Name"), []byte(p.Name)); err != nil {
@@ -37,9 +37,9 @@ func (p Positon) Put(tx *bolt.Tx) error {
 	return nil
 }
 
-func GetPositon(tx *bolt.Tx) (Positon, error) {
+func GetPositon(tx *bolt.Tx) (Position, error) {
 	var err error
-	var p Positon
+	var p Position
 	var value []byte
 	b := tx.Bucket([]byte(posBucketName))
 	if value = b.Get([]byte("Name")); value == nil {
