@@ -6,33 +6,33 @@ import (
 	"time"
 
 	"github.com/masahide/ftailer/core"
+	"github.com/masahide/ftailer/tailex"
 	"github.com/masahide/tail"
 	"golang.org/x/net/context"
 )
 
-type FTailConfig struct {
-	Name     string
-	Path     string
-	BufDir   string
-	Interval time.Duration
-}
+type Config struct {
+	Name   string
+	BufDir string
+	Period time.Duration // 分割保存インターバル
 
-type FTail struct {
+	tailex.Config
 }
 
 var tailDefaultConfig = tail.Config{
 	Follow:      true,
 	ReOpen:      true,
-	Poll:        true,
+	Poll:        false,
 	OpenNotify:  true,
 	MaxLineSize: 16 * 1024 * 1024, // 16MB
 }
 
-func Start(ctx context.Context, c FTailConfig) error {
-	rec, err := core.NewRecorder(c.BufDir, c.Name, c.Interval)
+func Start(ctx context.Context, c Config) error {
+	rec, err := core.NewRecorder(c.BufDir, c.Name, c.Period)
 	if err != nil {
 		log.Fatalln(err)
 	}
+	defer rec.AllClose()
 	pos := rec.Position()
 	if pos != nil {
 		fi, err := os.Stat(c.Name)
@@ -45,9 +45,11 @@ func Start(ctx context.Context, c FTailConfig) error {
 			Offset:   0,
 		}
 	}
-	conf := tailDefaultConfig
+	conf := tailex.Config{
+		Config: tailDefaultConfig,
+	}
 	conf.Location = &tail.SeekInfo{Offset: pos.Offset}
-	t, err := tail.TailFile(c.Path, conf)
+	t, err := tailex.TailFile(conf)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -55,10 +57,11 @@ func Start(ctx context.Context, c FTailConfig) error {
 		select {
 		case <-ctx.Done():
 			// キャンセル処理
-			rec.AllClose()
 			return ctx.Err()
-		case pos.CreateAt = <-t.OpenTime:
-		case line := <-t.Lines:
+		case line, ok := <-t.Lines:
+			if !ok {
+				return nil
+			}
 			pos.Offset, err = t.Tell()
 			if err != nil {
 				return err
@@ -67,6 +70,10 @@ func Start(ctx context.Context, c FTailConfig) error {
 			if err != nil {
 				return err
 			}
+		case fi := <-t.FileInfo:
+			pos.Offset = 0
+			pos.Name = fi.Path
+			pos.CreateAt = fi.CreateAt
 		}
 	}
 }

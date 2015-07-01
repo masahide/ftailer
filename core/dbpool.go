@@ -8,13 +8,13 @@ import (
 )
 
 type DBpool struct {
-	Path     string
-	Name     string
-	inTime   time.Time
-	outTime  time.Time
-	Interval time.Duration // time.Minute
-	dbs      map[time.Time]DB
-	mu       sync.RWMutex
+	Path    string
+	Name    string
+	inTime  time.Time
+	outTime time.Time
+	Period  time.Duration // time.Minute
+	dbs     map[time.Time]DB
+	mu      sync.RWMutex
 }
 
 var (
@@ -55,7 +55,7 @@ func (r *DBpool) isOpen(t time.Time) *DB {
 func (r *DBpool) Put(record Record, pos *Position) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	baseTime := record.Time.Truncate(r.Interval)
+	baseTime := record.Time.Truncate(r.Period)
 	if r.inTime.After(baseTime) {
 		return ErrTimePast
 	}
@@ -106,7 +106,7 @@ func (r *DBpool) AllClose() {
 }
 
 func (r *DBpool) autoClose(t time.Time) {
-	wait := time.Since(t.Add(r.Interval)) + delay
+	wait := time.Since(t.Add(r.Period)) + delay
 	if wait <= 0 {
 		r.Close(t, true)
 		return

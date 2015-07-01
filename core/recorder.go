@@ -9,13 +9,13 @@ type Recorder struct {
 
 func (r *Recorder) Position() *Position { return r.pos }
 
-func NewRecorder(filePath, name string, interval time.Duration) (*Recorder, error) {
+func NewRecorder(filePath, name string, period time.Duration) (*Recorder, error) {
 	var err error
 	r := &Recorder{
 		DBpool: DBpool{
-			Interval: interval,
-			Path:     filePath,
-			Name:     name,
+			Period: period,
+			Path:   filePath,
+			Name:   name,
 		},
 	}
 	r.pos, err = r.Init()
