@@ -1,6 +1,7 @@
 package ftail
 
 import (
+	"bytes"
 	"log"
 	"os"
 	"time"
@@ -58,23 +59,46 @@ func Start(ctx context.Context, c Config) error {
 	if err != nil {
 		log.Fatalln(err)
 	}
+	saveTick := time.Tick(1 * time.Second)
+	var buf bytes.Buffer
+	var lastTime time.Time
 	for {
 		select {
 		case <-ctx.Done():
 			// キャンセル処理
-			return ctx.Err()
-		case line, ok := <-t.Lines:
-			if !ok {
-				return nil
+			if buf.Len() > 0 {
+				err = rec.Put(core.Record{Time: lastTime, Data: buf.Bytes()}, pos)
 			}
+			return ctx.Err()
+		case <-saveTick:
 			pos.Offset, err = t.Tell()
 			if err != nil {
 				return err
 			}
-			err = rec.Put(core.Record{Time: line.Time, Data: []byte(line.Text)}, pos)
-			if err != nil {
+			if buf.Len() > 0 {
+				err = rec.Put(core.Record{Time: lastTime, Data: buf.Bytes()}, pos)
+				if err != nil {
+					return err
+				}
+				buf.Reset()
+			}
+
+		case line, ok := <-t.Lines:
+			if !ok {
+				err = nil
+				if buf.Len() > 0 {
+					err = rec.Put(core.Record{Time: lastTime, Data: buf.Bytes()}, pos)
+				}
 				return err
 			}
+			lastTime = line.Time
+			if _, err = buf.Write(line.Text); err != nil {
+				return err
+			}
+			if err = buf.WriteByte(byte('\n')); err != nil {
+				return err
+			}
+			//err = rec.Put(core.Record{Time: line.Time, Data: []byte(line.Text)}, pos)
 		case fi := <-t.FileInfo:
 			pos.Offset = 0
 			pos.Name = fi.Path
