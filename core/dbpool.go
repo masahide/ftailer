@@ -32,10 +32,10 @@ func (r *DBpool) open(t time.Time) (*DB, error) {
 			Time: t,
 		}
 	}
-	if err := db.open(); err != nil {
+	if err := db.open(recExt); err != nil {
 		return nil, err
 	}
-	if !ok {
+	if ok {
 		return &db, nil
 	}
 	r.dbs[t] = db
@@ -56,19 +56,23 @@ func (r *DBpool) Put(record Record, pos *Position) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	baseTime := record.Time.Truncate(r.Period)
+	log.Printf("inTime:%s baseTime:%s", r.inTime, baseTime) //TODO: test
 	if r.inTime.After(baseTime) {
+		log.Printf("ErrTimePast inTime:%s baseTime:%s", r.inTime, baseTime) //TODO: test
 		return ErrTimePast
 	}
 	if r.inTime.Before(baseTime) {
-		if err := r.Close(baseTime, true); err != nil {
-			r.mu.Unlock()
+		log.Printf("r.Close(%s)", r.inTime) //TODO: test
+		if err := r.Close(r.inTime, true); err != nil {
 			return err
 		}
 	}
 	var err error
 	db := r.isOpen(baseTime)
 	if db == nil {
+		log.Printf("r.open(%s) ", baseTime) //TODO: test
 		if db, err = r.open(baseTime); err != nil {
+			log.Printf("r.open(%s) err:%s", baseTime, err)
 			return err
 		}
 	}
@@ -88,6 +92,7 @@ func (r *DBpool) Close(t time.Time, fix bool) error {
 	if err := db.Close(fix); err != nil {
 		return err
 	}
+	log.Printf("Close %s db.DB:%v", t, db.DB)
 	if db.DB == nil {
 		delete(r.dbs, t)
 	}
@@ -98,7 +103,7 @@ func (r *DBpool) Close(t time.Time, fix bool) error {
 func (r *DBpool) AllClose() {
 	for k, db := range r.dbs {
 		if err := db.Close(false); err != nil {
-			log.Printf("Close err:%s", err)
+			log.Printf("Close err:%s", err) //TODO: test
 		}
 		delete(r.dbs, k)
 	}
@@ -106,8 +111,9 @@ func (r *DBpool) AllClose() {
 }
 
 func (r *DBpool) autoClose(t time.Time) {
-	wait := time.Since(t.Add(r.Period)) + delay
+	wait := t.Add(r.Period + delay).Sub(time.Now())
 	if wait <= 0 {
+		log.Printf("autoClose wait :%v t:%s", wait, t) //TODO: test
 		r.Close(t, true)
 		return
 	}
@@ -115,6 +121,7 @@ func (r *DBpool) autoClose(t time.Time) {
 		time.Sleep(wait)
 		r.mu.Lock()
 		defer r.mu.Unlock()
+		log.Printf("autoClose t:%s", t) //TODO: test
 		r.Close(t, true)
 	}(t, wait)
 }
@@ -124,18 +131,44 @@ func (r *DBpool) autoClose(t time.Time) {
 func (r *DBpool) Init() (pos *Position, err error) {
 	r.dbs = make(map[time.Time]DB, 0)
 	db := &DB{Path: r.Path, Name: r.Name}
+
+	// recファイル検索
 	dbfiles, err := RecGlob(db)
-	for _, f := range dbfiles {
-		db.Time = f.Time
-		if err = db.open(); err != nil {
-			return
-		}
-		var p Position
-		if p, err = db.GetPositon(); err != nil {
-			return nil, err
-		}
-		pos = &p
-		r.autoClose(db.Time)
+	if err != nil {
+		return
 	}
-	return
+	p := Position{}
+	if len(dbfiles) > 0 {
+		for _, f := range dbfiles {
+			var d *DB
+			if d, err = r.open(f.Time); err != nil {
+				log.Printf("not found db: %s", f.Path)
+				return
+			}
+			if p, err = d.GetPositon(); err != nil {
+				log.Printf("db:%s db.GetPositon err: %s", f.Path, err)
+				return nil, err
+			}
+			log.Printf("load positon: %v", p)
+			r.autoClose(db.Time)
+		}
+		return &p, err
+	}
+
+	// fixed fileを検索
+	if dbfiles, err = FixGlob(db); err != nil || len(dbfiles) == 0 {
+		return
+	}
+	f := dbfiles[len(dbfiles)-1]
+	db.Time = f.Time
+	if err = db.open(fixExt); err != nil {
+		log.Printf("not found db: %s", f.Path)
+		return
+	}
+	if p, err = db.GetPositon(); err != nil {
+		log.Printf("db:%s db.GetPositon err: %s", f.Path, err)
+		return nil, err
+	}
+	log.Printf("load positon: %v", p)
+	return &p, db.Close(false)
 }

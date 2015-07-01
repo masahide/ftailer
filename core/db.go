@@ -1,6 +1,7 @@
 package core
 
 import (
+	"log"
 	"os"
 	"path"
 	"time"
@@ -19,7 +20,6 @@ type DB struct {
 	Name string
 	Time time.Time
 	*bolt.DB
-	ref int //参照カウンタ
 	fix bool
 }
 
@@ -41,20 +41,19 @@ func (d *DB) GetPositon() (pos Position, err error) {
 	return pos, err
 }
 
-func (db *DB) open() error {
+func (db *DB) open(ext string) error {
 	if db.DB != nil {
-		db.ref++
 		return nil
 	}
 	filePath := db.makeFilePath()
 	os.MkdirAll(filePath, 0755)
 	fp := path.Join(filePath, db.makeFileName())
 	var err error
-	db.DB, err = bolt.Open(fp+recExt, 0600, nil)
+	db.DB, err = bolt.Open(fp+ext, 0600, nil)
 	if err != nil {
+		db.DB = nil
 		return err
 	}
-	db.ref++
 	return db.DB.Update(func(tx *bolt.Tx) error {
 		// Create a bucket.
 		if err = createRecordBucket(tx); err != nil {
@@ -73,18 +72,16 @@ func (db *DB) Close(fix bool) error {
 	if fix {
 		db.fix = true
 	}
-	db.ref--
-	if db.ref <= 0 {
-		if err := db.DB.Close(); err != nil {
+	if err := db.DB.Close(); err != nil {
+		return err
+	}
+	db.DB = nil
+	if db.fix {
+		// mv recExt fixExt
+		fileName := path.Join(db.makeFilePath(), db.makeFileName())
+		log.Printf("mv %s %s", fileName+recExt, fileName+fixExt) // TODO: test
+		if err := os.Rename(fileName+recExt, fileName+fixExt); err != nil {
 			return err
-		}
-		db.DB = nil
-		if db.fix {
-			// mv recExt fixExt
-			fileName := path.Join(db.makeFilePath(), db.makeFileName())
-			if err := os.Rename(fileName+recExt, fileName+fixExt); err != nil {
-				return err
-			}
 		}
 	}
 	return nil

@@ -34,22 +34,27 @@ func Start(ctx context.Context, c Config) error {
 	}
 	defer rec.AllClose()
 	pos := rec.Position()
-	if pos != nil {
-		fi, err := os.Stat(c.Name)
+	if pos == nil {
+		filePath := c.Path
+		if c.PathFmt != "" {
+			timeSlice := tailex.Truncate(time.Now(), c.RotatePeriod)
+			filePath = tailex.Time2Path(c.PathFmt, timeSlice)
+		}
+		fi, err := os.Stat(filePath)
 		if err != nil {
-			log.Fatalln(err)
-		}
-		pos = &core.Position{
-			Name:     c.Name,
-			CreateAt: fi.ModTime(),
-			Offset:   0,
+			log.Printf("Start os.Stat('%s')  err: %s,  ", filePath, err)
+			pos = &core.Position{}
+		} else {
+			pos = &core.Position{
+				Name:     filePath,
+				CreateAt: fi.ModTime(),
+				Offset:   0,
+			}
 		}
 	}
-	conf := tailex.Config{
-		Config: tailDefaultConfig,
-	}
-	conf.Location = &tail.SeekInfo{Offset: pos.Offset}
-	t, err := tailex.TailFile(conf)
+	c.Config.Config = tailDefaultConfig
+	c.Location = &tail.SeekInfo{Offset: pos.Offset}
+	t, err := tailex.TailFile(c.Config)
 	if err != nil {
 		log.Fatalln(err)
 	}

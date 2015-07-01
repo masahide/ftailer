@@ -28,7 +28,8 @@ func FixGlob(db *DB) ([]DBFiles, error) {
 func dbGlob(db *DB, ext string) ([]DBFiles, error) {
 	var lenExt = len(ext)
 	var lenTime = len(pathTimeFormat) + lenExt
-	matches, err := filepath.Glob(path.Join(db.Path, "*", "*"+ext))
+	globPath := path.Join(db.Path, db.Name, "*", "*"+ext)
+	matches, err := filepath.Glob(globPath)
 	if err != nil {
 		return nil, err
 	}

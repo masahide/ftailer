@@ -11,6 +11,7 @@ import (
 )
 
 type Config struct {
+	// logrotate log
 	Path string
 
 	// Cronolog
@@ -49,14 +50,6 @@ func Truncate(t time.Time, d time.Duration) time.Time {
 }
 
 type FTail struct {
-}
-
-var tailDefaultConfig = tail.Config{
-	Follow:      true,
-	ReOpen:      true,
-	Poll:        false,
-	OpenNotify:  true,
-	MaxLineSize: 16 * 1024 * 1024, // 16MB
 }
 
 func TailFile(config Config) (*TailEx, error) {
@@ -118,12 +111,14 @@ func (c *TailEx) tailFileSync() {
 			// キャンセル処理
 			return
 		case l := <-c.tail.Lines:
+			log.Printf("l:%v,%s", l.Time, l.Text) //TODO:test
 			c.updateAt = time.Now()
 			if c.old {
 				l.Time = c.TimeSlice.Add(c.RotatePeriod - 1*time.Second)
 			}
 			c.Lines <- l
 		case createAt := <-c.tail.OpenTime:
+			log.Printf("createAt:%v", createAt) //TODO:test
 			c.FileInfo <- FileInfo{Path: c.FilePath, CreateAt: createAt}
 		case <-n: // cronolog のファイル更新
 			if c.old && time.Now().Sub(c.updateAt) < c.Delay {
