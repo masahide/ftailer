@@ -29,7 +29,7 @@ func (r *DBpool) open(t time.Time) (db *DB, p Position, err error) {
 	if *db, ok = r.dbs[t]; !ok {
 		db = &DB{Name: r.Name, Path: r.Path, Time: t}
 	}
-	if err = db.open(recExt); err != nil {
+	if err = db.Open(recExt); err != nil {
 		return
 	}
 	if p, err = db.GetPositon(); err != nil {
@@ -171,7 +171,7 @@ func (r *DBpool) Init() (pos *Position, err error) {
 	}
 	f := dbfiles[len(dbfiles)-1]
 	db.Time = f.Time
-	if err = db.open(fixExt); err != nil {
+	if err = db.Open(FixExt); err != nil {
 		log.Printf("not found db: %s", f.Path)
 		return
 	}

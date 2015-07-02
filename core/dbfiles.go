@@ -22,7 +22,7 @@ func RecGlob(db *DB) ([]DBFiles, error) {
 }
 
 func FixGlob(db *DB) ([]DBFiles, error) {
-	return dbGlob(db, fixExt)
+	return dbGlob(db, FixExt)
 }
 
 func dbGlob(db *DB, ext string) ([]DBFiles, error) {

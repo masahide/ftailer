@@ -1,14 +1,18 @@
 package tailex
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/masahide/tail"
 )
+
+var ErrNoSuchFile = errors.New("No such file.")
 
 type Config struct {
 	// logrotate log
@@ -70,13 +74,30 @@ func TailFile(config Config) (*TailEx, error) {
 }
 
 func (c *TailEx) tailFile() error {
+	var err error
 	if c.PathFmt != "" {
-		c.FilePath = Time2Path(c.PathFmt, c.TimeSlice)
+		for {
+			firstFlag := false
+			c.FilePath, err = GlobSearch(Time2Path(c.PathFmt, c.TimeSlice))
+			if err != nil && err != ErrNoSuchFile {
+				return err
+			}
+			if err == ErrNoSuchFile {
+				if firstFlag {
+					log.Printf("%s: %s", err, c.PathFmt)
+				}
+				time.Sleep(1 * time.Second)
+				if Truncate(time.Now(), c.RotatePeriod).Sub(c.TimeSlice) > 0 {
+					c.TimeSlice = c.TimeSlice.Add(c.RotatePeriod)
+				}
+				continue
+			}
+			break
+		}
 	} else {
 		c.FilePath = c.Path
 	}
-	t, err := tail.TailFile(c.FilePath, c.Config.Config)
-	c.tail = t
+	c.tail, err = tail.TailFile(c.FilePath, c.Config.Config)
 	return err
 }
 
@@ -136,22 +157,25 @@ func (c *TailEx) tailFileSync() {
 				c.Stop()
 				return
 			}
-			err := c.tailFile() // 新しいファイルを開く
-			if err != nil {
-				log.Printf("TailEx.tailFile file:%s, err:%s", c.FilePath, err)
-				c.Stop()
-				return
-			}
-			fi, err := os.Stat(c.FilePath)
-			if err != nil {
-				log.Printf("TailEx os.Stat file:%s, err:%s", c.FilePath, err)
-				c.Stop()
-				return
-			}
-			c.FileInfo <- FileInfo{Path: c.FilePath, CreateAt: fi.ModTime()}
+			c.newOpen()
 			n = time.After(nextwait + c.Delay)
 		}
 	}
+}
+func (c *TailEx) newOpen() {
+	err := c.tailFile() // 新しいファイルを開く
+	if err != nil {
+		log.Printf("TailEx.tailFile file:%s, err:%s", c.FilePath, err)
+		c.Stop()
+		return
+	}
+	fi, err := os.Stat(c.FilePath)
+	if err != nil {
+		log.Printf("TailEx os.Stat file:%s, err:%s", c.FilePath, err)
+		c.Stop()
+		return
+	}
+	c.FileInfo <- FileInfo{Path: c.FilePath, CreateAt: fi.ModTime()}
 }
 
 // pathFmtのフォーマット文字列をアンダースコアに置換
@@ -179,4 +203,15 @@ func Time2Path(p string, t time.Time) string {
 	p = strings.Replace(p, "%N", fmt.Sprintf("%d", num), -1)
 	return p
 
+}
+
+func GlobSearch(globPath string) (string, error) {
+	matches, err := filepath.Glob(globPath)
+	if err != nil {
+		return "", err
+	}
+	if len(matches) == 0 {
+		return "", ErrNoSuchFile
+	}
+	return matches[0], nil
 }

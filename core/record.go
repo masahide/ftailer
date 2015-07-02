@@ -5,6 +5,7 @@ import (
 	"compress/zlib"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"time"
 
@@ -65,6 +66,21 @@ func GetRecord(tx *bolt.Tx, key []byte) (Record, error) {
 		r.Time, _ = time.Parse(time.RFC3339Nano, string(key[0:sv]))
 	}
 	return r, nil
+}
+
+func Cursor(tx *bolt.Tx) *bolt.Cursor {
+	return tx.Bucket([]byte(recordBucketName)).Cursor()
+}
+
+func ReadRecord(key, value []byte) (io.ReadCloser, error) {
+	if value == nil {
+		return nil, ErrNotFoundKey
+	}
+	if key[len(key)-1] == byte(gzipped) {
+		b := bytes.NewReader(value)
+		return zlib.NewReader(b)
+	}
+	return ioutil.NopCloser(bytes.NewReader(value)), nil
 }
 
 func createRecordBucket(tx *bolt.Tx) error {

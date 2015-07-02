@@ -11,7 +11,7 @@ import (
 
 const (
 	recExt = ".rec"
-	fixExt = ".fixed"
+	FixExt = ".fixed"
 	delay  = 10 * time.Second
 )
 
@@ -66,7 +66,7 @@ func (db *DB) createDB(ext string) error {
 	})
 }
 
-func (db *DB) open(ext string) error {
+func (db *DB) Open(ext string) error {
 	if db.DB != nil {
 		return nil
 	}
@@ -90,10 +90,10 @@ func (db *DB) Close(fix bool) error {
 	}
 	db.DB = nil
 	if db.fix {
-		// mv recExt fixExt
+		// mv recExt FixExt
 		fileName := path.Join(db.makeFilePath(), db.makeFileName())
-		log.Printf("mv %s %s", fileName+recExt, fileName+fixExt) // TODO: test
-		if err := os.Rename(fileName+recExt, fileName+fixExt); err != nil {
+		log.Printf("mv %s %s", fileName+recExt, fileName+FixExt) // TODO: test
+		if err := os.Rename(fileName+recExt, fileName+FixExt); err != nil {
 			return err
 		}
 	}
