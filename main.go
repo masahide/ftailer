@@ -22,7 +22,8 @@ func main() {
 		BufDir: "testbuf",
 		Period: 1 * time.Minute,
 		Config: tailex.Config{
-			Path:   "test.log",
+			Path: "/var/log/log_register/regist.log",
+			//Path:   "test.log",
 			Config: tail.Config{},
 		},
 	})

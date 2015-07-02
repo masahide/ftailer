@@ -23,16 +23,33 @@ var (
 )
 
 // open
-func (r *DBpool) open(t time.Time) (*DB, error) {
+func (r *DBpool) open(t time.Time) (db *DB, p Position, err error) {
+	var ok bool
+	db = &DB{}
+	if *db, ok = r.dbs[t]; !ok {
+		db = &DB{Name: r.Name, Path: r.Path, Time: t}
+	}
+	if err = db.open(recExt); err != nil {
+		return
+	}
+	if p, err = db.GetPositon(); err != nil {
+		return
+	}
+	if ok {
+		return
+	}
+	r.dbs[t] = *db
+	r.autoClose(t)
+	return
+}
+
+// open
+func (r *DBpool) createDB(t time.Time) (*DB, error) {
 	db, ok := r.dbs[t]
 	if !ok {
-		db = DB{
-			Name: r.Name,
-			Path: r.Path,
-			Time: t,
-		}
+		db = DB{Name: r.Name, Path: r.Path, Time: t}
 	}
-	if err := db.open(recExt); err != nil {
+	if err := db.createDB(recExt); err != nil {
 		return nil, err
 	}
 	if ok {
@@ -56,13 +73,13 @@ func (r *DBpool) Put(record Record, pos *Position) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	baseTime := record.Time.Truncate(r.Period)
-	log.Printf("inTime:%s baseTime:%s", r.inTime, baseTime) //TODO: test
+	//log.Printf("inTime:%s baseTime:%s", r.inTime, baseTime) //TODO: test
 	if r.inTime.After(baseTime) {
 		log.Printf("ErrTimePast inTime:%s baseTime:%s", r.inTime, baseTime) //TODO: test
 		return ErrTimePast
 	}
 	if r.inTime.Before(baseTime) {
-		log.Printf("r.Close(%s)", r.inTime) //TODO: test
+		//log.Printf("r.Close(%s)", r.inTime) //TODO: test
 		if err := r.Close(r.inTime, true); err != nil {
 			return err
 		}
@@ -70,9 +87,9 @@ func (r *DBpool) Put(record Record, pos *Position) error {
 	var err error
 	db := r.isOpen(baseTime)
 	if db == nil {
-		log.Printf("r.open(%s) ", baseTime) //TODO: test
-		if db, err = r.open(baseTime); err != nil {
-			log.Printf("r.open(%s) err:%s", baseTime, err)
+		//log.Printf("r.open(%s) ", baseTime) //TODO: test
+		if db, err = r.createDB(baseTime); err != nil {
+			log.Printf("r.createDB(%s) err:%s", baseTime, err)
 			return err
 		}
 	}
@@ -93,9 +110,7 @@ func (r *DBpool) Close(t time.Time, fix bool) error {
 		return err
 	}
 	log.Printf("Close %s db.DB:%v", t, db.DB)
-	if db.DB == nil {
-		delete(r.dbs, t)
-	}
+	delete(r.dbs, t)
 	return nil
 }
 
@@ -140,14 +155,9 @@ func (r *DBpool) Init() (pos *Position, err error) {
 	p := Position{}
 	if len(dbfiles) > 0 {
 		for _, f := range dbfiles {
-			var d *DB
-			if d, err = r.open(f.Time); err != nil {
-				log.Printf("not found db: %s", f.Path)
+			if _, p, err = r.open(f.Time); err != nil {
+				log.Printf("db open(%s) err: %s", f.Path, err)
 				return
-			}
-			if p, err = d.GetPositon(); err != nil {
-				log.Printf("db:%s db.GetPositon err: %s", f.Path, err)
-				return nil, err
 			}
 			log.Printf("load positon: %v", p)
 			r.autoClose(db.Time)

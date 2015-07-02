@@ -25,7 +25,7 @@ type DB struct {
 
 func (d *DB) put(record Record, pos *Position) error {
 	err := d.Update(func(tx *bolt.Tx) error {
-		if err := record.Put(tx, pos); err != nil {
+		if err := record.Put(tx, pos, true); err != nil {
 			return err
 		}
 		return pos.Put(tx)
@@ -41,7 +41,7 @@ func (d *DB) GetPositon() (pos Position, err error) {
 	return pos, err
 }
 
-func (db *DB) open(ext string) error {
+func (db *DB) createDB(ext string) error {
 	if db.DB != nil {
 		return nil
 	}
@@ -49,7 +49,7 @@ func (db *DB) open(ext string) error {
 	os.MkdirAll(filePath, 0755)
 	fp := path.Join(filePath, db.makeFileName())
 	var err error
-	db.DB, err = bolt.Open(fp+ext, 0600, nil)
+	db.DB, err = bolt.Open(fp+ext, 0644, nil)
 	if err != nil {
 		db.DB = nil
 		return err
@@ -64,6 +64,19 @@ func (db *DB) open(ext string) error {
 		}
 		return nil
 	})
+}
+
+func (db *DB) open(ext string) error {
+	if db.DB != nil {
+		return nil
+	}
+	fp := path.Join(db.makeFilePath(), db.makeFileName())
+	var err error
+	db.DB, err = bolt.Open(fp+ext, 0644, nil)
+	if err != nil {
+		db.DB = nil
+	}
+	return err
 }
 func (db *DB) Close(fix bool) error {
 	if db.DB == nil {

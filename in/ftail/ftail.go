@@ -2,6 +2,7 @@ package ftail
 
 import (
 	"bytes"
+	"compress/zlib"
 	"log"
 	"os"
 	"time"
@@ -60,49 +61,72 @@ func Start(ctx context.Context, c Config) error {
 		log.Fatalln(err)
 	}
 	saveTick := time.Tick(1 * time.Second)
-	var buf bytes.Buffer
-	var lastTime time.Time
+	//var buf bytes.Buffer
+	buf, err := NewlineBuf(rec)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
 			// キャンセル処理
-			if buf.Len() > 0 {
-				err = rec.Put(core.Record{Time: lastTime, Data: buf.Bytes()}, pos)
-			}
+			buf.Flush(pos)
 			return ctx.Err()
 		case <-saveTick:
 			pos.Offset, err = t.Tell()
 			if err != nil {
 				return err
 			}
-			if buf.Len() > 0 {
-				err = rec.Put(core.Record{Time: lastTime, Data: buf.Bytes()}, pos)
-				if err != nil {
-					return err
-				}
-				buf.Reset()
+			buf.Flush(pos)
+			if err != nil {
+				return err
 			}
-
 		case line, ok := <-t.Lines:
 			if !ok {
-				err = nil
-				if buf.Len() > 0 {
-					err = rec.Put(core.Record{Time: lastTime, Data: buf.Bytes()}, pos)
-				}
+				return buf.Flush(pos)
+			}
+			if err = buf.Write(line); err != nil {
 				return err
 			}
-			lastTime = line.Time
-			if _, err = buf.Write(line.Text); err != nil {
-				return err
-			}
-			if err = buf.WriteByte(byte('\n')); err != nil {
-				return err
-			}
-			//err = rec.Put(core.Record{Time: line.Time, Data: []byte(line.Text)}, pos)
+			//err = rec.Flush(core.Record{Time: line.Time, Data: []byte(line.Text)}, pos)
 		case fi := <-t.FileInfo:
 			pos.Offset = 0
 			pos.Name = fi.Path
 			pos.CreateAt = fi.CreateAt
 		}
 	}
+}
+
+type lineBuf struct {
+	buf bytes.Buffer
+	*zlib.Writer
+	rec      *core.Recorder
+	lastTime time.Time
+}
+
+func NewlineBuf(rec *core.Recorder) (l *lineBuf, err error) {
+	l = &lineBuf{}
+	l.rec = rec
+	l.Writer, err = zlib.NewWriterLevel(&l.buf, zlib.BestCompression)
+	return
+}
+func (l *lineBuf) Write(line *tail.Line) (err error) {
+	l.lastTime = line.Time
+	if _, err = l.Writer.Write(line.Text); err != nil {
+		return err
+	}
+	_, err = l.Writer.Write([]byte("\n"))
+	return err
+}
+
+func (l *lineBuf) Flush(pos *core.Position) error {
+	if l.buf.Len() <= 0 {
+		return nil
+	}
+	l.Writer.Close()
+	err := l.rec.Put(core.Record{Time: l.lastTime, Data: l.buf.Bytes()}, pos)
+	l.buf.Reset()
+	l.Reset(&l.buf)
+	return err
 }

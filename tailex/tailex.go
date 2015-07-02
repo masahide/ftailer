@@ -111,7 +111,7 @@ func (c *TailEx) tailFileSync() {
 			// キャンセル処理
 			return
 		case l := <-c.tail.Lines:
-			log.Printf("l:%v,%s", l.Time, l.Text) //TODO:test
+			//log.Printf("l:%v,%s", l.Time, l.Text) //TODO:test
 			c.updateAt = time.Now()
 			if c.old {
 				l.Time = c.TimeSlice.Add(c.RotatePeriod - 1*time.Second)

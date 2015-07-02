@@ -32,15 +32,19 @@ func makeKey(t time.Time, pos *Position, compress byte) []byte {
 	return []byte(fmt.Sprintf("%s_%s_%016x_%c", t.Format(time.RFC3339Nano), pos.CreateAt.Format(time.RFC3339), pos.Offset, compress))
 }
 
-func (r Record) Put(tx *bolt.Tx, pos *Position) error {
+func (r Record) Put(tx *bolt.Tx, pos *Position, gz bool) error {
 	c := byte(plain)
-	if len(r.Data) >= CompressSize {
+	if gz { //  すでに圧縮済み
+		c = byte(gzipped)
+	} else if len(r.Data) >= CompressSize {
 		if err := r.Compress(); err != nil {
 			return err
 		}
 		c = byte(gzipped)
 	}
-	return tx.Bucket([]byte(recordBucketName)).Put(makeKey(r.Time, pos, c), r.Data)
+	b := tx.Bucket([]byte(recordBucketName))
+	b.FillPercent = 1.0
+	return b.Put(makeKey(r.Time, pos, c), r.Data)
 }
 
 func GetRecord(tx *bolt.Tx, key []byte) (Record, error) {
@@ -74,9 +78,11 @@ func (r Record) Compress() error {
 	if err != nil {
 		return err
 	}
+	//log.Printf("plain   size: %d", len(r.Data)) //TODO: test
 	w.Write(r.Data)
 	w.Close()
 	r.Data = buf.Bytes()
+	//log.Printf("gzipped size: %d", len(r.Data)) //TODO: test
 	return nil
 }
 func (r Record) Decompress() error {
