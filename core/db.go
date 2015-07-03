@@ -19,6 +19,7 @@ type DB struct {
 	Path string
 	Name string
 	Time time.Time
+
 	*bolt.DB
 	fix bool
 }

@@ -27,9 +27,11 @@ var accessLogConfig = ftail.Config{
 	Period: 1 * time.Minute,
 	Config: tailex.Config{
 		//Path: "/var/log/log_register/regist.log",
-		PathFmt:      "/var/log/httpd/%Y%m%d/kitsune.access_log",
+		//PathFmt:      "/var/log/httpd/%Y%m%d/kibana-test.access_log",
+		//RotatePeriod: 24 * time.Hour,
+		PathFmt:      "testlog/%Y%m%d/%H%M.log",
+		RotatePeriod: 1 * time.Minute,
 		Time:         time.Now(),
-		RotatePeriod: 24 * time.Hour,
 		Delay:        10 * time.Second,
 		Config:       tail.Config{},
 	},
@@ -43,6 +45,7 @@ func main() {
 	ctx, cancel = context.WithCancel(context.Background())
 	defer cancel()
 	err := ftail.Start(ctx, accessLogConfig)
+	//err := ftail.Start(ctx, registLogConfig)
 	if err != nil {
 		log.Printf("ftail.Start err:%v", err)
 	}
