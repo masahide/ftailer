@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/masahide/tail"
@@ -45,7 +44,6 @@ type TailEx struct {
 	offset    int64
 
 	tail *tail.Tail
-	mu   sync.RWMutex
 }
 
 // time.Truncateを 1 day(24*time.Hour)を指定された場合にtimezoneを考慮するように
@@ -67,7 +65,6 @@ func TailFile(config Config) *TailEx {
 		Lines:     make(chan *tail.Line),
 		done:      make(chan struct{}),
 		FileInfo:  make(chan FileInfo),
-		mu:        sync.RWMutex{},
 	}
 
 	go c.tailFileSyncLoop()
@@ -83,18 +80,15 @@ func (c *TailEx) tailFileSyncLoop() {
 
 		c.tailFileSync()
 
-		c.TimeSlice = c.TimeSlice.Add(c.RotatePeriod)
-		c.mu.Lock()
 		err := c.tail.Stop() //  古い方を止める
-		c.mu.Unlock()
 		if err != nil {
 			log.Printf("TailEx.tail.Stop err:%s", err)
 			c.Stop()
 			return
 		}
-		c.mu.Lock()
 		c.tail = nil
-		c.mu.Unlock()
+		log.Printf("TailEx.tail.Stop %s", c.TimeSlice)
+		c.TimeSlice = c.TimeSlice.Add(c.RotatePeriod)
 	}
 }
 
@@ -131,20 +125,16 @@ func (c *TailEx) tailFile() error {
 	} else {
 		c.FilePath = c.Path
 	}
-	log.Printf("FilePath %s", c.FilePath)
+	log.Printf("GlobSearch: FilePath %s", c.FilePath)
 	t, err := tail.TailFile(c.FilePath, c.Config.Config)
 	if err != nil {
 		return err
 	}
-	c.mu.Lock()
 	c.tail = t
-	c.mu.Unlock()
 	return err
 }
 
 func (c *TailEx) Tell() (offset int64, err error) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
 	if c.tail == nil {
 		return c.offset, nil
 	}
@@ -154,8 +144,6 @@ func (c *TailEx) Tell() (offset int64, err error) {
 
 // Stop stops the tailing activity.
 func (c *TailEx) Stop() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	if c.tail != nil {
 		if err := c.tail.Stop(); err != nil {
 			return err
