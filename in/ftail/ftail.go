@@ -29,6 +29,34 @@ var tailDefaultConfig = tail.Config{
 	MaxLineSize: 16 * 1024 * 1024, // 16MB
 }
 
+// ポジション情報がない場合に実ファイルから取得
+func position(c Config) (pos *core.Position, err error) {
+	var fi os.FileInfo
+	filePath := c.Path
+	if c.PathFmt != "" { // cronolog
+		timeSlice := tailex.Truncate(c.Config.Time, c.Period)
+		searchPath := tailex.Time2Path(c.PathFmt, timeSlice)
+		filePath, err = tailex.GlobSearch(searchPath)
+		if err == tailex.ErrNoSuchFile {
+			log.Printf("Start GlobSearch(%s)  err: %s", searchPath, err)
+			return &core.Position{}, nil
+		} else if err != nil {
+			log.Printf("Start GlobSearch(%s)  err: %s", searchPath, err)
+			return nil, err
+		}
+	}
+	if fi, err = os.Stat(filePath); err != nil {
+		log.Printf("Start os.Stat('%s')  err: %s,  ", filePath, err)
+		return nil, err
+	}
+	pos = &core.Position{
+		Name:     filePath,
+		CreateAt: fi.ModTime(),
+		Offset:   0,
+	}
+	return
+}
+
 func Start(ctx context.Context, c Config) error {
 	rec, err := core.NewRecorder(c.BufDir, c.Name, c.Period)
 	if err != nil {
@@ -37,24 +65,8 @@ func Start(ctx context.Context, c Config) error {
 	defer rec.AllClose()
 	pos := rec.Position()
 	if pos == nil {
-		filePath := c.Path
-		if c.PathFmt != "" {
-			timeSlice := tailex.Truncate(time.Now(), c.Period)
-			filePath, err = tailex.GlobSearch(tailex.Time2Path(c.PathFmt, timeSlice))
-		}
-		var fi os.FileInfo
-		if err == nil {
-			fi, err = os.Stat(filePath)
-		}
-		if err != nil {
-			log.Printf("Start os.Stat('%s')  err: %s,  ", filePath, err)
-			pos = &core.Position{}
-		} else {
-			pos = &core.Position{
-				Name:     filePath,
-				CreateAt: fi.ModTime(),
-				Offset:   0,
-			}
+		if pos, err = position(c); err != nil {
+			log.Fatalln("position err:", err)
 		}
 	}
 	c.Config.Config = tailDefaultConfig
@@ -69,10 +81,12 @@ func Start(ctx context.Context, c Config) error {
 
 	for {
 		select {
+
+		// キャンセル処理
 		case <-ctx.Done():
-			// キャンセル処理
 			buf.Flush(pos)
 			return ctx.Err()
+		// db Flush
 		case <-saveTick:
 			pos.Offset, err = t.Tell()
 			if err != nil {
@@ -83,7 +97,7 @@ func Start(ctx context.Context, c Config) error {
 			if err != nil {
 				return err
 			}
-
+		// 新しい入力行の取得
 		case line, ok := <-t.Lines:
 			if !ok {
 				return buf.Flush(pos)
@@ -91,13 +105,14 @@ func Start(ctx context.Context, c Config) error {
 			if err = buf.Write(line); err != nil {
 				return err
 			}
-			//err = rec.Flush(core.Record{Time: line.Time, Data: []byte(line.Text)}, pos)
+		//  DBのクローズリクエスト
 		case closeTime := <-rec.CloseAlert:
 			rec.Close(closeTime, true)
 			if _, err = rec.CreateDB(tailex.Truncate(time.Now(), c.Period)); err != nil {
 				log.Printf("CreateDB err", err)
 				return err
 			}
+		// 新規入力ファイルの情報保存
 		case fi := <-t.FileInfo:
 			pos.Offset = 0
 			pos.Name = fi.Path

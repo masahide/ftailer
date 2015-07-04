@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"sync"
 	"time"
 
 	"github.com/masahide/ftailer/in/ftail"
@@ -26,11 +27,20 @@ var accessLogConfig = ftail.Config{
 	BufDir: "testbuf",
 	Period: 1 * time.Minute,
 	Config: tailex.Config{
-		//Path: "/var/log/log_register/regist.log",
-		//PathFmt:      "/var/log/httpd/%Y%m%d/kibana-test.access_log",
-		//RotatePeriod: 24 * time.Hour,
-		PathFmt:      "testlog/%Y%m%d/%H%M.log",
-		RotatePeriod: 1 * time.Minute,
+		PathFmt:      "/var/log/httpd/%Y%m%d/kibana-test.access_log",
+		RotatePeriod: 24 * time.Hour,
+		Time:         time.Now(),
+		Delay:        10 * time.Second,
+		Config:       tail.Config{},
+	},
+}
+var testLogConfig = ftail.Config{
+	Name:   "test_log",
+	BufDir: "testbuf",
+	Period: 1 * time.Minute,
+	Config: tailex.Config{
+		PathFmt:      "testlog/%Y%m%d/%H.log",
+		RotatePeriod: 1 * time.Hour,
 		Time:         time.Now(),
 		Delay:        10 * time.Second,
 		Config:       tail.Config{},
@@ -44,9 +54,28 @@ func main() {
 	)
 	ctx, cancel = context.WithCancel(context.Background())
 	defer cancel()
-	err := ftail.Start(ctx, accessLogConfig)
-	//err := ftail.Start(ctx, registLogConfig)
-	if err != nil {
-		log.Printf("ftail.Start err:%v", err)
-	}
+	//err := ftail.Start(ctx, accessLogConfig)
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		err := ftail.Start(ctx, registLogConfig)
+		if err != nil {
+			log.Printf("ftail.Start err:%v", err)
+		}
+	}()
+	wg.Add(1)
+	go func() {
+		err := ftail.Start(ctx, accessLogConfig)
+		if err != nil {
+			log.Printf("ftail.Start err:%v", err)
+		}
+	}()
+	wg.Add(1)
+	go func() {
+		err := ftail.Start(ctx, testLogConfig)
+		if err != nil {
+			log.Printf("ftail.Start err:%v", err)
+		}
+	}()
+	wg.Wait()
 }

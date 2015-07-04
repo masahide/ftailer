@@ -55,9 +55,6 @@ func Truncate(t time.Time, d time.Duration) time.Time {
 	return t.Truncate(d)
 }
 
-type FTail struct {
-}
-
 func TailFile(config Config) *TailEx {
 	c := &TailEx{
 		Config:    config,

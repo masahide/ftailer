@@ -55,7 +55,7 @@ func (db *DB) createDB(ext string) error {
 		db.DB = nil
 		return err
 	}
-	return db.DB.Update(func(tx *bolt.Tx) error {
+	err = db.DB.Update(func(tx *bolt.Tx) error {
 		// Create a bucket.
 		if err = createRecordBucket(tx); err != nil {
 			return err
@@ -65,6 +65,8 @@ func (db *DB) createDB(ext string) error {
 		}
 		return nil
 	})
+	log.Printf("DB was created. %s", fp+ext)
+	return err
 }
 
 func (db *DB) Open(ext string) error {
@@ -77,6 +79,7 @@ func (db *DB) Open(ext string) error {
 	if err != nil {
 		db.DB = nil
 	}
+	log.Printf("DB was opened.  %s", fp+ext)
 	return err
 }
 func (db *DB) Close(fix bool) error {
@@ -93,10 +96,12 @@ func (db *DB) Close(fix bool) error {
 	if db.fix {
 		// mv recExt FixExt
 		fileName := path.Join(db.makeFilePath(), db.makeFileName())
-		log.Printf("mv %s %s", fileName+recExt, fileName+FixExt) // TODO: test
 		if err := os.Rename(fileName+recExt, fileName+FixExt); err != nil {
 			return err
 		}
+		log.Printf("DB was closed.  %s -> %s", fileName+recExt, fileName+FixExt)
+	} else {
+		log.Printf("DB was closed.  %s", path.Join(db.makeFilePath(), db.makeFileName())+recExt)
 	}
 	return nil
 }
@@ -113,8 +118,4 @@ func (db *DB) makeFilePath() string {
 }
 func (db *DB) makeFileName() string {
 	return makeFileName(db.Time)
-}
-
-func (r *DBpool) makeFilePath(t time.Time) string {
-	return makeFilePath(r.Path, r.Name, t)
 }
