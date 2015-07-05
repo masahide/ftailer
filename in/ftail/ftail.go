@@ -34,14 +34,14 @@ func position(c Config) (pos *core.Position, err error) {
 	var fi os.FileInfo
 	filePath := c.Path
 	if c.PathFmt != "" { // cronolog
-		timeSlice := tailex.Truncate(c.Config.Time, c.Period)
+		timeSlice := tailex.Truncate(c.Config.Time, c.RotatePeriod)
 		searchPath := tailex.Time2Path(c.PathFmt, timeSlice)
 		filePath, err = tailex.GlobSearch(searchPath)
 		if err == tailex.ErrNoSuchFile {
-			log.Printf("Start GlobSearch(%s)  err: %s", searchPath, err)
+			log.Printf("ftail position() GlobSearch(%s)  err: %s", searchPath, err)
 			return &core.Position{}, nil
 		} else if err != nil {
-			log.Printf("Start GlobSearch(%s)  err: %s", searchPath, err)
+			log.Printf("ftail position() GlobSearch(%s)  err: %s", searchPath, err)
 			return nil, err
 		}
 	}
@@ -71,7 +71,7 @@ func Start(ctx context.Context, c Config) error {
 	}
 	c.Config.Config = tailDefaultConfig
 	c.Location = &tail.SeekInfo{Offset: pos.Offset}
-	t := tailex.TailFile(c.Config)
+	t := tailex.TailFile(ctx, c.Config)
 	saveTick := time.Tick(1 * time.Second)
 	//var buf bytes.Buffer
 	buf, err := NewlineBuf(rec)
@@ -108,7 +108,7 @@ func Start(ctx context.Context, c Config) error {
 		//  DBのクローズリクエスト
 		case closeTime := <-rec.CloseAlert:
 			rec.Close(closeTime, true)
-			if _, err = rec.CreateDB(tailex.Truncate(time.Now(), c.Period)); err != nil {
+			if _, err = rec.CreateDB(tailex.Truncate(time.Now(), c.Period), pos); err != nil {
 				log.Printf("CreateDB err", err)
 				return err
 			}

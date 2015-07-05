@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/masahide/tail"
+	"golang.org/x/net/context"
 )
 
 var ErrNoSuchFile = errors.New("No such file.")
@@ -39,7 +40,6 @@ type TailEx struct {
 	FilePath  string
 	FileInfo  chan FileInfo
 	old       bool
-	done      chan struct{}
 	updateAt  time.Time
 	offset    int64
 
@@ -55,74 +55,84 @@ func Truncate(t time.Time, d time.Duration) time.Time {
 	return t.Truncate(d)
 }
 
-func TailFile(config Config) *TailEx {
+func TailFile(ctx context.Context, config Config) *TailEx {
 	c := &TailEx{
 		Config:    config,
 		TimeSlice: Truncate(config.Time, config.RotatePeriod),
 		Lines:     make(chan *tail.Line),
-		done:      make(chan struct{}),
 		FileInfo:  make(chan FileInfo),
 	}
+	log.Printf("init config.Time:%s -> TimeSlice:%s", config.Time, Truncate(config.Time, config.RotatePeriod)) //TODO: test
 
-	go c.tailFileSyncLoop()
+	go c.tailFileSyncLoop(ctx)
 	return c
 }
 
-func (c *TailEx) tailFileSyncLoop() {
+func (c *TailEx) tailFileSyncLoop(ctx context.Context) {
 	for {
-		if err := c.newOpen(); err != nil {
+		// ファイルを開く
+		if err := c.newOpen(ctx); err != nil {
 			log.Printf("tailFileSyncLoop newOpen err:%s", err)
 			return
 		}
 
-		c.tailFileSync()
+		//
+		c.tailFileSync(ctx)
 
+		log.Printf("TailEx start tail.Stop %s:%s", c.Path, c.TimeSlice)
 		err := c.tail.Stop() //  古い方を止める
 		if err != nil {
 			log.Printf("TailEx.tail.Stop err:%s", err)
 			c.Stop()
 			return
 		}
+		//log.Printf("TailEx end tail.Stop %s:%s", c.Path, c.TimeSlice)
+		c.tail.Cleanup() //  古い方をcleanup
+		//log.Printf("TailEx end tail.cleanup %s:%s", c.Path, c.TimeSlice)
 		c.tail = nil
-		log.Printf("TailEx.tail.Stop %s", c.TimeSlice)
 		c.TimeSlice = c.TimeSlice.Add(c.RotatePeriod)
 	}
 }
 
-func (c *TailEx) GlobSearchLoop() (string, error) {
+// Glob検索で見つかるまで 1*time.Secondでpolling
+func (c *TailEx) GlobSearchLoop(ctx context.Context) (string, error) {
 	firstFlag := true
 	for {
 		globPath := Time2Path(c.PathFmt, c.TimeSlice)
 		s, err := GlobSearch(globPath)
 		if err == nil {
-			return s, nil
+			return s, nil // 見つかった
 		} else if err != ErrNoSuchFile {
-			return "", err
+			return "", err // その他のエラー
 		}
 		if firstFlag {
 			log.Printf("%s:GlobSearch s:'%s', %s", err, globPath, c.PathFmt)
-			firstFlag = false //TODO: test
+			firstFlag = false
 		}
 		select {
 		case <-time.After(1 * time.Second):
-		case <-c.done:
+		case <-ctx.Done():
 			// キャンセル処理
-			return "", ErrCancel
+			return "", ctx.Err()
 		}
+		// TimeSliceが過去なら進める
 		if Truncate(time.Now(), c.RotatePeriod).Sub(c.TimeSlice) > 0 {
-			c.TimeSlice = c.TimeSlice.Add(c.RotatePeriod)
+			next := c.TimeSlice.Add(c.RotatePeriod)
+			log.Printf("GlobSearchLoop add TimeSlice:%s -> %v", c.TimeSlice, next)
+			c.TimeSlice = next
 		}
 	}
 }
 
-func (c *TailEx) tailFile() error {
+func (c *TailEx) tailFile(ctx context.Context) error {
 	var err error
 	if c.PathFmt != "" {
-		c.FilePath, err = c.GlobSearchLoop()
+		c.FilePath, err = c.GlobSearchLoop(ctx)
+		c.Config.Config.ReOpen = false
 	} else {
 		c.FilePath = c.Path
 	}
-	log.Printf("GlobSearch: FilePath %s", c.FilePath)
+	log.Printf("Start tail.TailFile(%s)", c.FilePath) //TODO: test
 	t, err := tail.TailFile(c.FilePath, c.Config.Config)
 	if err != nil {
 		return err
@@ -142,6 +152,7 @@ func (c *TailEx) Tell() (offset int64, err error) {
 // Stop stops the tailing activity.
 func (c *TailEx) Stop() error {
 	if c.tail != nil {
+		log.Printf("tail.Stop() Path:%s", c.Path)
 		if err := c.tail.Stop(); err != nil {
 			return err
 		}
@@ -151,9 +162,7 @@ func (c *TailEx) Stop() error {
 	return nil
 }
 
-var ErrCancel = errors.New("Cancel")
-
-func (c *TailEx) tailFileSync() error {
+func (c *TailEx) tailFileSync(ctx context.Context) error {
 	var n <-chan time.Time
 	if c.PathFmt != "" {
 		next := c.TimeSlice.Add(c.RotatePeriod)
@@ -167,9 +176,10 @@ func (c *TailEx) tailFileSync() error {
 	}
 	for {
 		select {
-		case <-c.done:
+		case <-ctx.Done():
 			// キャンセル処理
-			return ErrCancel
+			log.Printf("tailFileSync ctx Done. ctx.Err:%v", ctx.Err()) //TODO: test
+			return ctx.Err()
 		case l := <-c.tail.Lines:
 			//log.Printf("l:%v,%s", l.Time, l.Text) //TODO:test
 			c.updateAt = time.Now()
@@ -178,10 +188,12 @@ func (c *TailEx) tailFileSync() error {
 			}
 			c.Lines <- l
 		case createAt := <-c.tail.OpenTime:
-			log.Printf("createAt:%v", createAt) //TODO:test
-			c.FileInfo <- FileInfo{Path: c.FilePath, CreateAt: createAt}
+			fi := FileInfo{Path: c.FilePath, CreateAt: createAt}
+			log.Printf("Open FileInfo: Path:%s, CreateAt:", fi.Path, fi.CreateAt)
+			c.FileInfo <- fi
 		case <-n: // cronolog のファイル更新
 			if c.old && time.Now().Sub(c.updateAt) < c.Delay {
+				log.Printf("set time.After:%v, c.updateAt:%v, old:%v", c.Delay, c.updateAt, c.old) //TODO: test
 				n = time.After(c.Delay)
 				continue
 			}
@@ -189,8 +201,8 @@ func (c *TailEx) tailFileSync() error {
 		}
 	}
 }
-func (c *TailEx) newOpen() error {
-	err := c.tailFile() // 新しいファイルを開く
+func (c *TailEx) newOpen(ctx context.Context) error {
+	err := c.tailFile(ctx) // 新しいファイルを開く
 	if err != nil {
 		log.Printf("TailEx.tailFile file:%s, err:%s", c.FilePath, err)
 		c.Stop()

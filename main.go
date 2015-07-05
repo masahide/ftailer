@@ -39,10 +39,10 @@ var testLogConfig = ftail.Config{
 	BufDir: "testbuf",
 	Period: 1 * time.Minute,
 	Config: tailex.Config{
-		PathFmt:      "testlog/%Y%m%d/%H.log",
-		RotatePeriod: 1 * time.Hour,
+		PathFmt:      "testlog/%Y%m%d/%H%M.log",
+		RotatePeriod: 2 * time.Minute,
 		Time:         time.Now(),
-		Delay:        10 * time.Second,
+		Delay:        5 * time.Second,
 		Config:       tail.Config{},
 	},
 }
@@ -56,20 +56,23 @@ func main() {
 	defer cancel()
 	//err := ftail.Start(ctx, accessLogConfig)
 	wg := sync.WaitGroup{}
-	wg.Add(1)
-	go func() {
-		err := ftail.Start(ctx, registLogConfig)
-		if err != nil {
-			log.Printf("ftail.Start err:%v", err)
-		}
-	}()
-	wg.Add(1)
-	go func() {
-		err := ftail.Start(ctx, accessLogConfig)
-		if err != nil {
-			log.Printf("ftail.Start err:%v", err)
-		}
-	}()
+	/*
+		wg.Add(1)
+		go func() {
+			err := ftail.Start(ctx, registLogConfig)
+			if err != nil {
+				log.Printf("ftail.Start err:%v", err)
+			}
+		}()
+		wg.Add(1)
+		go func() {
+			err := ftail.Start(ctx, accessLogConfig)
+			if err != nil {
+				log.Printf("ftail.Start err:%v", err)
+			}
+		}()
+	*/
+
 	wg.Add(1)
 	go func() {
 		err := ftail.Start(ctx, testLogConfig)
@@ -77,5 +80,6 @@ func main() {
 			log.Printf("ftail.Start err:%v", err)
 		}
 	}()
+
 	wg.Wait()
 }

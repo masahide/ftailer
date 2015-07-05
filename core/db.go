@@ -42,7 +42,7 @@ func (d *DB) GetPositon() (pos Position, err error) {
 	return pos, err
 }
 
-func (db *DB) createDB(ext string) error {
+func (db *DB) createDB(ext string, pos *Position) error {
 	if db.DB != nil {
 		return nil
 	}
@@ -61,6 +61,9 @@ func (db *DB) createDB(ext string) error {
 			return err
 		}
 		if err = createPosBucket(tx); err != nil {
+			return err
+		}
+		if err = pos.Put(tx); err != nil {
 			return err
 		}
 		return nil

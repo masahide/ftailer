@@ -47,13 +47,13 @@ func (r *DBpool) open(t time.Time) (*DB, Position, error) {
 }
 
 // open
-func (r *DBpool) CreateDB(t time.Time) (*DB, error) {
+func (r *DBpool) CreateDB(t time.Time, pos *Position) (*DB, error) {
 	db, ok := r.dbs[t]
 	if ok { //  存在している
 		return db, nil
 	}
 	db = &DB{Name: r.Name, Path: r.Path, Time: t}
-	if err := db.createDB(recExt); err != nil {
+	if err := db.createDB(recExt, pos); err != nil {
 		return nil, err
 	}
 	//log.Printf("DB was created.: %s:%v", r.Name, t) // TODO: test
@@ -88,7 +88,7 @@ func (r *DBpool) Put(record Record, pos *Position) error {
 	db := r.isOpen(baseTime)
 	if db == nil {
 		//log.Printf("r.open(%s) ", baseTime) //TODO: test
-		if db, err = r.CreateDB(baseTime); err != nil {
+		if db, err = r.CreateDB(baseTime, pos); err != nil {
 			log.Printf("r.createDB(%s) err:%s", baseTime, err)
 			return err
 		}
