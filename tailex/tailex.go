@@ -72,14 +72,16 @@ func (c *TailEx) tailFileSyncLoop(ctx context.Context) {
 	for {
 		// ファイルを開く
 		if err := c.newOpen(ctx); err != nil {
-			log.Printf("tailFileSyncLoop newOpen err:%s", err)
+			if err != context.Canceled {
+				log.Printf("tailFileSyncLoop newOpen err:%s", err)
+			}
 			return
 		}
 
 		//
-		c.tailFileSync(ctx)
+		tailFileSyncErr := c.tailFileSync(ctx)
 
-		log.Printf("TailEx start tail.Stop %s:%s", c.Path, c.TimeSlice)
+		log.Printf("TailEx tail.Stop() %s:%s", c.FilePath, c.TimeSlice)
 		err := c.tail.Stop() //  古い方を止める
 		if err != nil {
 			log.Printf("TailEx.tail.Stop err:%s", err)
@@ -90,6 +92,10 @@ func (c *TailEx) tailFileSyncLoop(ctx context.Context) {
 		c.tail.Cleanup() //  古い方をcleanup
 		//log.Printf("TailEx end tail.cleanup %s:%s", c.Path, c.TimeSlice)
 		c.tail = nil
+
+		if tailFileSyncErr != nil {
+			return
+		}
 		c.TimeSlice = c.TimeSlice.Add(c.RotatePeriod)
 	}
 }
@@ -110,10 +116,10 @@ func (c *TailEx) GlobSearchLoop(ctx context.Context) (string, error) {
 			firstFlag = false
 		}
 		select {
-		case <-time.After(1 * time.Second):
 		case <-ctx.Done():
 			// キャンセル処理
 			return "", ctx.Err()
+		case <-time.After(1 * time.Second):
 		}
 		// TimeSliceが過去なら進める
 		if Truncate(time.Now(), c.RotatePeriod).Sub(c.TimeSlice) > 0 {
@@ -128,6 +134,9 @@ func (c *TailEx) tailFile(ctx context.Context) error {
 	var err error
 	if c.PathFmt != "" {
 		c.FilePath, err = c.GlobSearchLoop(ctx)
+		if err != nil {
+			return err
+		}
 		c.Config.Config.ReOpen = false
 	} else {
 		c.FilePath = c.Path
@@ -178,7 +187,7 @@ func (c *TailEx) tailFileSync(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			// キャンセル処理
-			log.Printf("tailFileSync ctx Done. ctx.Err:%v", ctx.Err()) //TODO: test
+			//log.Printf("tailFileSync ctx Done. %s:%s, %v", c.FilePath, c.TimeSlice, ctx.Err()) //TODO: test
 			return ctx.Err()
 		case l := <-c.tail.Lines:
 			//log.Printf("l:%v,%s", l.Time, l.Text) //TODO:test
@@ -189,7 +198,7 @@ func (c *TailEx) tailFileSync(ctx context.Context) error {
 			c.Lines <- l
 		case createAt := <-c.tail.OpenTime:
 			fi := FileInfo{Path: c.FilePath, CreateAt: createAt}
-			log.Printf("Open FileInfo: Path:%s, CreateAt:", fi.Path, fi.CreateAt)
+			log.Printf("Open FileInfo: Path:%s, CreateAt:%s", fi.Path, fi.CreateAt)
 			c.FileInfo <- fi
 		case <-n: // cronolog のファイル更新
 			if c.old && time.Now().Sub(c.updateAt) < c.Delay {
@@ -204,7 +213,9 @@ func (c *TailEx) tailFileSync(ctx context.Context) error {
 func (c *TailEx) newOpen(ctx context.Context) error {
 	err := c.tailFile(ctx) // 新しいファイルを開く
 	if err != nil {
-		log.Printf("TailEx.tailFile file:%s, err:%s", c.FilePath, err)
+		if err != context.Canceled {
+			log.Printf("TailEx.tailFile file:%s, err:%s", c.FilePath, err)
+		}
 		c.Stop()
 		return err
 	}
