@@ -124,7 +124,7 @@ func (c *TailEx) GlobSearchLoop(ctx context.Context) (string, error) {
 		// TimeSliceが過去なら進める
 		if Truncate(time.Now(), c.RotatePeriod).Sub(c.TimeSlice) > 0 {
 			next := c.TimeSlice.Add(c.RotatePeriod)
-			log.Printf("GlobSearchLoop add TimeSlice:%s -> %v", c.TimeSlice, next)
+			log.Printf("GlobSearchLoop %s: add TimeSlice:%s -> %v", c.PathFmt, c.TimeSlice, next)
 			c.TimeSlice = next
 		}
 	}
