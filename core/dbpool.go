@@ -197,5 +197,5 @@ func (r *DBpool) recPositon() (*Position, error) {
 }
 
 func (r *DBpool) makeFilePath(t time.Time) string {
-	return makeFilePath(r.Path, r.Name, t)
+	return MakeFilePath(r.Path, r.Name, t)
 }
