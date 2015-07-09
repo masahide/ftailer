@@ -37,6 +37,13 @@ func (r *DBpool) open(t time.Time) (*DB, Position, error) {
 	if err = db.Open(recExt); err != nil {
 		return nil, p, err
 	}
+	defer func() {
+		if r := recover(); r != nil {
+			db.Close(false)
+			db.Delete(recExt)
+			log.Fatalf("Recovered in db.GetPositon : %v", r)
+		}
+	}()
 	if p, err = db.GetPositon(); err != nil {
 		return nil, p, err
 	}

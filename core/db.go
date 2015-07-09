@@ -108,6 +108,14 @@ func (db *DB) Close(fix bool) error {
 	}
 	return nil
 }
+func (db *DB) Delete(ext string) error {
+	if db.DB != nil {
+		return nil
+	}
+	fp := path.Join(db.MakeFilePath(), db.MakeFileName())
+	log.Printf("save mv %s -> %s", fp+ext, fp+".broken")
+	return os.Rename(fp+ext, fp+".broken")
+}
 
 func MakeFilePath(filePath, fileName string, t time.Time) string {
 	return path.Join(filePath, fileName, t.Format("20060102"))

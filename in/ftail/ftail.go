@@ -5,6 +5,7 @@ import (
 	"compress/zlib"
 	"log"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/masahide/ftailer/core"
@@ -59,10 +60,12 @@ func position(c Config) (pos *core.Position, err error) {
 
 func Start(ctx context.Context, c Config) error {
 	rec, err := core.NewRecorder(c.BufDir, c.Name, c.Period)
+	var buf *lineBuf
+	mu := sync.RWMutex{}
 	if err != nil {
 		log.Fatalln("NewRecorder err:", err)
 	}
-	defer rec.AllClose()
+	defer func() { mu.Lock(); rec.AllClose(); mu.Unlock() }()
 	pos := rec.Position()
 	if pos == nil {
 		if pos, err = position(c); err != nil {
@@ -74,7 +77,9 @@ func Start(ctx context.Context, c Config) error {
 	t := tailex.TailFile(ctx, c.Config)
 	saveTick := time.Tick(1 * time.Second)
 	//var buf bytes.Buffer
-	buf, err := NewlineBuf(rec)
+	mu.Lock()
+	buf, err = NewlineBuf(rec)
+	mu.Unlock()
 	if err != nil {
 		log.Fatalln("NewlineBuf err:", err)
 	}
@@ -84,7 +89,9 @@ func Start(ctx context.Context, c Config) error {
 
 		// キャンセル処理
 		case <-ctx.Done():
+			mu.Lock()
 			buf.Flush(pos)
+			mu.Unlock()
 			return ctx.Err()
 		// db Flush
 		case <-saveTick:
@@ -93,22 +100,33 @@ func Start(ctx context.Context, c Config) error {
 				log.Printf("t.Tell err", err)
 				return err
 			}
+			mu.Lock()
 			buf.Flush(pos)
+			mu.Unlock()
 			if err != nil {
 				return err
 			}
 		// 新しい入力行の取得
 		case line, ok := <-t.Lines:
 			if !ok {
-				return buf.Flush(pos)
+				mu.Lock()
+				err := buf.Flush(pos)
+				mu.Unlock()
+				return err
 			}
-			if err = buf.Write(line); err != nil {
+			mu.Lock()
+			err = buf.Write(line)
+			mu.Unlock()
+			if err != nil {
 				return err
 			}
 		//  DBのクローズリクエスト
 		case closeTime := <-rec.CloseAlert:
+			mu.Lock()
 			rec.Close(closeTime, true)
-			if _, err = rec.CreateDB(tailex.Truncate(time.Now(), c.Period), pos); err != nil {
+			_, err = rec.CreateDB(tailex.Truncate(time.Now(), c.Period), pos)
+			mu.Unlock()
+			if err != nil {
 				log.Printf("CreateDB err", err)
 				return err
 			}
