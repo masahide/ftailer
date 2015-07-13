@@ -7,13 +7,12 @@ import (
 )
 
 type DBpool struct {
-	Path       string
-	Name       string
-	inTime     time.Time
-	outTime    time.Time
-	Period     time.Duration // time.Minute
-	dbs        map[time.Time]*DB
-	CloseAlert chan time.Time
+	Path    string
+	Name    string
+	inTime  time.Time
+	outTime time.Time
+	Period  time.Duration // time.Minute
+	dbs     map[time.Time]*DB
 }
 
 var (
@@ -49,12 +48,16 @@ func (r *DBpool) open(t time.Time) (*DB, Position, error) {
 	}
 	//log.Printf("opened DB.: %s:%v", r.Name, t) //TODO: test
 	r.dbs[t] = db
-	r.autoClose(t)
+	//r.autoClose(t)
 	return db, p, nil
 }
 
-// open
+// CreateDB
 func (r *DBpool) CreateDB(t time.Time, pos *Position) (*DB, error) {
+	if r.inTime.Sub(t) > 0 {
+		log.Printf("%s. 'inTime:%s > baseTime:%s'", ErrTimePast, r.inTime, t)
+		return nil, ErrTimePast
+	}
 	db, ok := r.dbs[t]
 	if ok { //  存在している
 		return db, nil
@@ -65,7 +68,8 @@ func (r *DBpool) CreateDB(t time.Time, pos *Position) (*DB, error) {
 	}
 	//log.Printf("DB was created.: %s:%v", r.Name, t) // TODO: test
 	r.dbs[t] = db
-	r.autoClose(t)
+	r.inTime = t
+	//r.autoClose(t)
 	return db, nil
 }
 
@@ -81,11 +85,11 @@ func (r *DBpool) isOpen(t time.Time) *DB {
 func (r *DBpool) Put(record Record, pos *Position) error {
 	baseTime := record.Time.Truncate(r.Period)
 	//log.Printf("inTime:%s baseTime:%s", r.inTime, baseTime) //TODO: test
-	if r.inTime.After(baseTime) {
+	if r.inTime.Sub(baseTime) > 0 {
 		log.Printf("%s. 'inTime:%s > baseTime:%s'", ErrTimePast, r.inTime, baseTime)
 		return ErrTimePast
 	}
-	if r.inTime.Before(baseTime) {
+	if r.inTime.Sub(baseTime) < 0 {
 		//log.Printf("r.Close(%s)", r.inTime) //TODO: test
 		if err := r.Close(r.inTime, true); err != nil {
 			return err
@@ -94,7 +98,6 @@ func (r *DBpool) Put(record Record, pos *Position) error {
 	var err error
 	db := r.isOpen(baseTime)
 	if db == nil {
-		//log.Printf("r.open(%s) ", baseTime) //TODO: test
 		if db, err = r.CreateDB(baseTime, pos); err != nil {
 			log.Printf("r.createDB(%s) err:%s", baseTime, err)
 			return err
@@ -103,7 +106,6 @@ func (r *DBpool) Put(record Record, pos *Position) error {
 	if err = db.put(record, pos); err != nil {
 		return err
 	}
-	r.inTime = baseTime
 	return nil
 }
 
@@ -122,7 +124,7 @@ func (r *DBpool) Close(t time.Time, fix bool) error {
 	return nil
 }
 
-// Close
+// AllClose
 func (r *DBpool) AllClose() {
 	for k, db := range r.dbs {
 		if err := db.Close(false); err != nil {
@@ -133,6 +135,22 @@ func (r *DBpool) AllClose() {
 	r.dbs = nil
 }
 
+func (r *DBpool) CloseOldDbs() (int, error) {
+	for k, db := range r.dbs {
+		elapsed := db.Time.Add(r.Period + delay).Sub(time.Now())
+		if elapsed <= 0 {
+			log.Printf("Closed the DB files of old time. wait:%v t:%s", elapsed, db.Time)
+			if err := db.Close(true); err != nil {
+				log.Printf("Close err:%s", err)
+				return len(r.dbs), err
+			}
+			delete(r.dbs, k)
+		}
+	}
+	return len(r.dbs), nil
+}
+
+/*
 func (r *DBpool) autoClose(t time.Time) {
 	wait := t.Add(r.Period + delay).Sub(time.Now())
 	if wait <= 0 {
@@ -140,16 +158,12 @@ func (r *DBpool) autoClose(t time.Time) {
 		r.Close(t, true)
 		return
 	}
-	go func(t time.Time, wait time.Duration) {
-		time.Sleep(wait)
-		r.CloseAlert <- t // クローズ依頼通知
-	}(t, wait)
 }
+*/
 
-// open
-
+// Init
+// 最終のdbからPositionを読み込み
 func (r *DBpool) Init() (pos *Position, err error) {
-	r.CloseAlert = make(chan time.Time)
 	r.dbs = make(map[time.Time]*DB, 0)
 
 	// recファイル検索
@@ -177,7 +191,7 @@ func (r *DBpool) Init() (pos *Position, err error) {
 		return nil, err
 	}
 	log.Printf("load positon: %v", p)
-	return &p, db.Close(false)
+	return &p, db.Close(false) //確認したfixedファイルは閉じる
 }
 
 func (r *DBpool) recPositon() (*Position, error) {
@@ -198,7 +212,7 @@ func (r *DBpool) recPositon() (*Position, error) {
 		}
 
 		log.Printf("load positon: %v", p)
-		r.autoClose(db.Time)
+		//r.autoClose(db.Time)
 	}
 	return &p, err
 }

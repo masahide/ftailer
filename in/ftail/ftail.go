@@ -5,7 +5,6 @@ import (
 	"compress/zlib"
 	"log"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/masahide/ftailer/core"
@@ -61,11 +60,10 @@ func position(c Config) (pos *core.Position, err error) {
 func Start(ctx context.Context, c Config) error {
 	rec, err := core.NewRecorder(c.BufDir, c.Name, c.Period)
 	var buf *lineBuf
-	mu := sync.RWMutex{}
 	if err != nil {
 		log.Fatalln("NewRecorder err:", err)
 	}
-	defer func() { mu.Lock(); rec.AllClose(); mu.Unlock() }()
+	defer rec.AllClose()
 	pos := rec.Position()
 	if pos == nil {
 		if pos, err = position(c); err != nil {
@@ -77,9 +75,9 @@ func Start(ctx context.Context, c Config) error {
 	t := tailex.TailFile(ctx, c.Config)
 	saveTick := time.Tick(1 * time.Second)
 	//var buf bytes.Buffer
-	mu.Lock()
 	buf, err = NewlineBuf(rec)
-	mu.Unlock()
+	defer buf.Flush(pos)
+
 	if err != nil {
 		log.Fatalln("NewlineBuf err:", err)
 	}
@@ -89,9 +87,6 @@ func Start(ctx context.Context, c Config) error {
 
 		// キャンセル処理
 		case <-ctx.Done():
-			mu.Lock()
-			buf.Flush(pos)
-			mu.Unlock()
 			return ctx.Err()
 		// db Flush
 		case <-saveTick:
@@ -100,34 +95,30 @@ func Start(ctx context.Context, c Config) error {
 				log.Printf("t.Tell err", err)
 				return err
 			}
-			mu.Lock()
-			buf.Flush(pos)
-			mu.Unlock()
-			if err != nil {
+			if err := buf.Flush(pos); err != nil {
 				return err
+			}
+			// 古いDBを閉じる
+			openNum, err := rec.CloseOldDbs()
+			if err != nil {
+				log.Printf("CloseOldDbs err", err)
+				return err
+			}
+			if openNum == 0 { // 開いているDBが0になったら新しいDBを作成
+				timeSlice := tailex.Truncate(time.Now(), c.Period)
+				_, err = rec.CreateDB(timeSlice, pos)
+				if err != nil {
+					log.Printf("CreateDB err", err)
+					return err
+				}
 			}
 		// 新しい入力行の取得
 		case line, ok := <-t.Lines:
 			if !ok {
-				mu.Lock()
-				err := buf.Flush(pos)
-				mu.Unlock()
 				return err
 			}
-			mu.Lock()
 			err = buf.Write(line)
-			mu.Unlock()
 			if err != nil {
-				return err
-			}
-		//  DBのクローズリクエスト
-		case closeTime := <-rec.CloseAlert:
-			mu.Lock()
-			rec.Close(closeTime, true)
-			_, err = rec.CreateDB(tailex.Truncate(time.Now(), c.Period), pos)
-			mu.Unlock()
-			if err != nil {
-				log.Printf("CreateDB err", err)
 				return err
 			}
 		// 新規入力ファイルの情報保存
@@ -169,5 +160,8 @@ func (l *lineBuf) Flush(pos *core.Position) error {
 	err := l.rec.Put(core.Record{Time: l.lastTime, Data: l.buf.Bytes()}, pos)
 	l.buf.Reset()
 	l.Reset(&l.buf)
+	if err != nil {
+		log.Printf("Flush %s err", pos.Name, err)
+	}
 	return err
 }
