@@ -12,7 +12,7 @@ import (
 const (
 	recExt = ".rec"
 	FixExt = ".fixed"
-	delay  = 10 * time.Second
+	delay  = 0 * time.Second
 )
 
 type DB struct {
