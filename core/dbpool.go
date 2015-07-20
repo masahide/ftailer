@@ -135,9 +135,9 @@ func (r *DBpool) AllClose() {
 	r.dbs = nil
 }
 
-func (r *DBpool) CloseOldDbs() (int, error) {
+func (r *DBpool) CloseOldDbs(t time.Time) (int, error) {
 	for k, db := range r.dbs {
-		elapsed := db.Time.Add(r.Period + delay).Sub(time.Now())
+		elapsed := db.Time.Add(r.Period + delay).Sub(t)
 		if elapsed <= 0 {
 			log.Printf("Closed the DB files of old time. wait:%v t:%s", elapsed, db.Time)
 			if err := db.Close(true); err != nil {

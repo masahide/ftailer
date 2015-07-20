@@ -22,11 +22,12 @@ type Config struct {
 }
 
 var tailDefaultConfig = tail.Config{
-	Follow:      true,
-	ReOpen:      true,
-	Poll:        false,
-	OpenNotify:  true,
-	MaxLineSize: 16 * 1024 * 1024, // 16MB
+	Follow: true,
+	ReOpen: true,
+	Poll:   false,
+	//OpenNotify:  true,
+	MaxLineSize:    16 * 1024 * 1024, // 16MB
+	NotifyInterval: 1 * time.Second,
 }
 
 // ポジション情報がない場合に実ファイルから取得
@@ -73,7 +74,6 @@ func Start(ctx context.Context, c Config) error {
 	c.Config.Config = tailDefaultConfig
 	c.Location = &tail.SeekInfo{Offset: pos.Offset}
 	t := tailex.TailFile(ctx, c.Config)
-	saveTick := time.Tick(1 * time.Second)
 	//var buf bytes.Buffer
 	buf, err = NewlineBuf(rec)
 	defer buf.Flush(pos)
@@ -88,44 +88,55 @@ func Start(ctx context.Context, c Config) error {
 		// キャンセル処理
 		case <-ctx.Done():
 			return ctx.Err()
-		// db Flush
-		case <-saveTick:
-			pos.Offset, err = t.Tell()
-			if err != nil {
-				log.Printf("t.Tell err", err)
-				return err
-			}
-			if err := buf.Flush(pos); err != nil {
-				return err
-			}
-			// 古いDBを閉じる
-			openNum, err := rec.CloseOldDbs()
-			if err != nil {
-				log.Printf("CloseOldDbs err", err)
-				return err
-			}
-			if openNum == 0 { // 開いているDBが0になったら新しいDBを作成
-				timeSlice := tailex.Truncate(time.Now(), c.Period)
-				_, err = rec.CreateDB(timeSlice, pos)
-				if err != nil {
-					log.Printf("CreateDB err", err)
-					return err
-				}
-			}
 		// 新しい入力行の取得
 		case line, ok := <-t.Lines:
 			if !ok {
 				return err
 			}
+
+			if len(line.Text) == 0 { // Ticker
+				// db Flush
+				pos.Offset = line.Offset
+				pos.Name = line.Filename
+				pos.CreateAt = line.OpenTime
+				if err := buf.Flush(pos); err != nil {
+					return err
+				}
+				// 古いDBを閉じる
+				openNum, err := rec.CloseOldDbs(line.Time)
+				if err != nil {
+					log.Printf("CloseOldDbs err", err)
+					return err
+				}
+				if openNum == 0 { // 開いているDBが0になったら新しいDBを作成
+					timeSlice := tailex.Truncate(time.Now(), c.Period)
+					_, err = rec.CreateDB(timeSlice, pos)
+					if err != nil {
+						log.Printf("CreateDB err", err)
+						return err
+					}
+				}
+				continue
+			}
+
 			err = buf.Write(line)
 			if err != nil {
 				return err
 			}
-		// 新規入力ファイルの情報保存
-		case fi := <-t.FileInfo:
-			pos.Offset = 0
-			pos.Name = fi.Path
-			pos.CreateAt = fi.CreateAt
+			/*
+				pos.Offset, err = t.Tell()
+				if err != nil {
+					log.Printf("t.Tell err", err)
+					return err
+				}
+			*/
+			/*
+				// 新規入力ファイルの情報保存
+				case fi := <-t.FileInfo:
+					pos.Offset = 0
+					pos.Name = fi.Path
+					pos.CreateAt = fi.CreateAt
+			*/
 		}
 	}
 }
@@ -145,10 +156,7 @@ func NewlineBuf(rec *core.Recorder) (l *lineBuf, err error) {
 }
 func (l *lineBuf) Write(line *tail.Line) (err error) {
 	l.lastTime = line.Time
-	if _, err = l.Writer.Write(line.Text); err != nil {
-		return err
-	}
-	_, err = l.Writer.Write([]byte("\n"))
+	_, err = l.Writer.Write(line.Text)
 	return err
 }
 
@@ -161,7 +169,7 @@ func (l *lineBuf) Flush(pos *core.Position) error {
 	l.buf.Reset()
 	l.Reset(&l.buf)
 	if err != nil {
-		log.Printf("Flush %s err", pos.Name, err)
+		log.Printf("Flush %s err:%s", pos.Name, err)
 	}
 	return err
 }

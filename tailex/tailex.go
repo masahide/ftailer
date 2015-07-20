@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -28,20 +27,22 @@ type Config struct {
 	tail.Config
 }
 
+/*
 type FileInfo struct {
 	Path     string
 	CreateAt time.Time
 }
+*/
 
 type TailEx struct {
 	Config
 	Lines     chan *tail.Line
 	TimeSlice time.Time // 現在のファイルの time slice
 	FilePath  string
-	FileInfo  chan FileInfo
-	old       bool
-	updateAt  time.Time
-	offset    int64
+	//FileInfo  chan FileInfo
+	old      bool
+	updateAt time.Time
+	offset   int64
 
 	tail *tail.Tail
 }
@@ -60,7 +61,7 @@ func TailFile(ctx context.Context, config Config) *TailEx {
 		Config:    config,
 		TimeSlice: Truncate(config.Time, config.RotatePeriod),
 		Lines:     make(chan *tail.Line),
-		FileInfo:  make(chan FileInfo),
+		//FileInfo:  make(chan FileInfo),
 	}
 	log.Printf("init config.Time:%s -> TimeSlice:%s", config.Time, Truncate(config.Time, config.RotatePeriod)) //TODO: test
 
@@ -191,15 +192,17 @@ func (c *TailEx) tailFileSync(ctx context.Context) error {
 			return ctx.Err()
 		case l := <-c.tail.Lines:
 			//log.Printf("l:%v,%s", l.Time, l.Text) //TODO:test
-			c.updateAt = time.Now()
+			c.updateAt = l.Time
 			if c.old {
 				l.Time = c.TimeSlice.Add(c.RotatePeriod - 1*time.Second)
 			}
 			c.Lines <- l
-		case createAt := <-c.tail.OpenTime:
-			fi := FileInfo{Path: c.FilePath, CreateAt: createAt}
-			log.Printf("Open FileInfo: Path:%s, CreateAt:%s", fi.Path, fi.CreateAt)
-			c.FileInfo <- fi
+			/*
+				case createAt := <-c.tail.OpenTime:
+					fi := FileInfo{Path: c.FilePath, CreateAt: createAt}
+					log.Printf("Open FileInfo: Path:%s, CreateAt:%s", fi.Path, fi.CreateAt)
+					c.FileInfo <- fi
+			*/
 		case <-n: // cronolog のファイル更新
 			if c.old && time.Now().Sub(c.updateAt) < c.Delay {
 				log.Printf("set time.After:%v, c.updateAt:%v, old:%v", c.Delay, c.updateAt, c.old) //TODO: test
@@ -220,13 +223,15 @@ func (c *TailEx) newOpen(ctx context.Context) error {
 		return err
 	}
 	log.Printf("Tail Open file %s", c.FilePath)
-	fi, err := os.Stat(c.FilePath)
-	if err != nil {
-		log.Printf("TailEx os.Stat file:%s, err:%s", c.FilePath, err)
-		c.Stop()
-		return err
-	}
-	c.FileInfo <- FileInfo{Path: c.FilePath, CreateAt: fi.ModTime()}
+	/*
+		fi, err := os.Stat(c.FilePath)
+		if err != nil {
+			log.Printf("TailEx os.Stat file:%s, err:%s", c.FilePath, err)
+			c.Stop()
+			return err
+		}
+		c.FileInfo <- FileInfo{Path: c.FilePath, CreateAt: fi.ModTime()}
+	*/
 	return nil
 }
 
