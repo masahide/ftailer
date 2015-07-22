@@ -21,6 +21,16 @@ type Config struct {
 	tailex.Config
 }
 
+type Ftail struct {
+	rec       *core.Recorder
+	lastSlice time.Time
+	Config
+
+	buf bytes.Buffer
+	*zlib.Writer
+	lastTime time.Time
+}
+
 var tailDefaultConfig = tail.Config{
 	Follow: true,
 	ReOpen: true,
@@ -59,117 +69,114 @@ func position(c Config) (pos *core.Position, err error) {
 }
 
 func Start(ctx context.Context, c Config) error {
-	rec, err := core.NewRecorder(c.BufDir, c.Name, c.Period)
-	var buf *lineBuf
+	f := &Ftail{Config: c}
+	var err error
+	f.rec, err = core.NewRecorder(c.BufDir, c.Name, c.Period)
 	if err != nil {
 		log.Fatalln("NewRecorder err:", err)
 	}
-	defer rec.AllClose()
-	pos := rec.Position()
-	if pos == nil {
-		if pos, err = position(c); err != nil {
+	defer f.rec.AllClose()
+
+	f.Pos = f.rec.Position()
+	if f.Pos == nil {
+		if f.Pos, err = position(c); err != nil {
 			log.Fatalln("position err:", err)
 		}
 	}
-	c.Config.Config = tailDefaultConfig
-	c.Location = &tail.SeekInfo{Offset: pos.Offset}
-	t := tailex.TailFile(ctx, c.Config)
+	f.Config.Config.Config = tailDefaultConfig
+	log.Printf("f.Pos:%v:%v", f.Pos.Name, f.Pos.Offset)
+	f.Location = &tail.SeekInfo{Offset: f.Pos.Offset}
+	t := tailex.TailFile(ctx, f.Config.Config)
 	//var buf bytes.Buffer
-	buf, err = NewlineBuf(rec)
-	defer buf.Flush(pos)
-
+	f.buf = bytes.Buffer{}
+	f.Writer, err = zlib.NewWriterLevel(&f.buf, zlib.BestCompression)
 	if err != nil {
-		log.Fatalln("NewlineBuf err:", err)
+		log.Fatalln("NewZlibWriter err:", err)
 	}
+	defer f.Flush()
 
 	for {
 		select {
-
-		// キャンセル処理
-		case <-ctx.Done():
+		case <-ctx.Done(): // キャンセル処理
 			return ctx.Err()
-		// 新しい入力行の取得
-		case line, ok := <-t.Lines:
+		case line, ok := <-t.Lines: // 新しい入力行の取得
 			if !ok {
 				return err
 			}
-
-			if len(line.Text) == 0 { // Ticker
-				// db Flush
-				pos.Offset = line.Offset
-				pos.Name = line.Filename
-				pos.CreateAt = line.OpenTime
-				if err := buf.Flush(pos); err != nil {
-					return err
-				}
-				// 古いDBを閉じる
-				openNum, err := rec.CloseOldDbs(line.Time)
-				if err != nil {
-					log.Printf("CloseOldDbs err", err)
-					return err
-				}
-				if openNum == 0 { // 開いているDBが0になったら新しいDBを作成
-					timeSlice := tailex.Truncate(time.Now(), c.Period)
-					_, err = rec.CreateDB(timeSlice, pos)
-					if err != nil {
-						log.Printf("CreateDB err", err)
-						return err
-					}
-				}
-				continue
-			}
-
-			err = buf.Write(line)
+			err := f.lineNotifyAction(ctx, line)
 			if err != nil {
 				return err
 			}
-			/*
-				pos.Offset, err = t.Tell()
-				if err != nil {
-					log.Printf("t.Tell err", err)
-					return err
-				}
-			*/
-			/*
-				// 新規入力ファイルの情報保存
-				case fi := <-t.FileInfo:
-					pos.Offset = 0
-					pos.Name = fi.Path
-					pos.CreateAt = fi.CreateAt
-			*/
 		}
+
 	}
+
 }
 
-type lineBuf struct {
-	buf bytes.Buffer
-	*zlib.Writer
-	rec      *core.Recorder
-	lastTime time.Time
+// lineのNotifyType別に処理を分岐
+func (f *Ftail) lineNotifyAction(ctx context.Context, line *tail.Line) error {
+	var err error
+	switch line.NotifyType {
+	case tail.NewLineNotify: // 新しいライン
+		err = f.Write(line)
+		if err != nil {
+			return err
+		}
+	case tail.TickerNotify: // 定期flush処理
+		if err := f.Flush(); err != nil {
+			return err
+		}
+		timeSlice := tailex.Truncate(line.Time, f.Period)
+		if f.lastSlice.Sub(timeSlice) < 0 {
+			// 新しいDBを開く
+			if _, err = f.rec.CreateDB(timeSlice, f.Pos); err != nil {
+				log.Printf("CreateDB err:%s", err)
+				return err
+			}
+			f.lastSlice = timeSlice
+		}
+		// 古いDBを閉じる
+		if _, err := f.rec.CloseOldDbs(line.Time); err != nil {
+			log.Printf("CloseOldDbs err:%s", err)
+			return err
+		}
+	case tailex.GlobLoopNotify: // glob ファイル検索ループ ticker
+		// 古いDBを閉じる
+		if err := f.Flush(); err != nil {
+			return err
+		}
+		if _, err := f.rec.CloseOldDbs(line.Time); err != nil {
+			log.Printf("CloseOldDbs err:%s", err)
+			return err
+		}
+	case tail.NewFileNotify:
+		f.lastTime = line.Time
+		f.Pos.Name = line.Filename
+		f.Pos.CreateAt = line.OpenTime
+		f.Pos.Offset = line.Offset
+	}
+	return nil
 }
 
-func NewlineBuf(rec *core.Recorder) (l *lineBuf, err error) {
-	l = &lineBuf{}
-	l.rec = rec
-	l.Writer, err = zlib.NewWriterLevel(&l.buf, zlib.BestCompression)
-	return
-}
-func (l *lineBuf) Write(line *tail.Line) (err error) {
-	l.lastTime = line.Time
-	_, err = l.Writer.Write(line.Text)
+func (f *Ftail) Write(line *tail.Line) (err error) {
+	f.lastTime = line.Time
+	f.Pos.Name = line.Filename
+	f.Pos.CreateAt = line.OpenTime
+	f.Pos.Offset = line.Offset
+	_, err = f.Writer.Write(line.Text)
 	return err
 }
 
-func (l *lineBuf) Flush(pos *core.Position) error {
-	if l.buf.Len() <= 0 {
+func (f *Ftail) Flush() error {
+	if f.buf.Len() <= 0 {
 		return nil
 	}
-	l.Writer.Close()
-	err := l.rec.Put(core.Record{Time: l.lastTime, Data: l.buf.Bytes()}, pos)
-	l.buf.Reset()
-	l.Reset(&l.buf)
+	f.Writer.Close()
+	err := f.rec.Put(core.Record{Time: f.lastTime, Data: f.buf.Bytes()}, f.Pos)
+	f.buf.Reset()
+	f.Reset(&f.buf)
 	if err != nil {
-		log.Printf("Flush %s err:%s", pos.Name, err)
+		log.Printf("Flush %s err:%s", f.Pos.Name, err)
 	}
 	return err
 }

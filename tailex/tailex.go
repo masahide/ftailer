@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/masahide/ftailer/core"
 	"github.com/masahide/tail"
 	"golang.org/x/net/context"
 )
@@ -19,10 +20,12 @@ type Config struct {
 	Path string
 
 	// Cronolog
-	PathFmt      string        // cronologなどのpathに日付が入る場合
-	Time         time.Time     // start日時
-	RotatePeriod time.Duration // ログローテーション間隔
-	Delay        time.Duration // 切り替えwait
+	PathFmt       string        // cronologなどのpathに日付が入る場合
+	Time          time.Time     // start日時
+	RotatePeriod  time.Duration // ログローテーション間隔
+	Delay         time.Duration // 切り替えwait
+	LinesChanSize int           // Lines channel size
+	Pos           *core.Position
 
 	tail.Config
 }
@@ -34,15 +37,17 @@ type FileInfo struct {
 }
 */
 
+const (
+	GlobLoopNotify int = iota + tail.TickerNotify + 1
+)
+
 type TailEx struct {
 	Config
 	Lines     chan *tail.Line
 	TimeSlice time.Time // 現在のファイルの time slice
 	FilePath  string
 	//FileInfo  chan FileInfo
-	old      bool
-	updateAt time.Time
-	offset   int64
+	old bool
 
 	tail *tail.Tail
 }
@@ -60,7 +65,7 @@ func TailFile(ctx context.Context, config Config) *TailEx {
 	c := &TailEx{
 		Config:    config,
 		TimeSlice: Truncate(config.Time, config.RotatePeriod),
-		Lines:     make(chan *tail.Line),
+		Lines:     make(chan *tail.Line, config.LinesChanSize),
 		//FileInfo:  make(chan FileInfo),
 	}
 	log.Printf("init config.Time:%s -> TimeSlice:%s", config.Time, Truncate(config.Time, config.RotatePeriod)) //TODO: test
@@ -122,6 +127,8 @@ func (c *TailEx) GlobSearchLoop(ctx context.Context) (string, error) {
 			return "", ctx.Err()
 		case <-time.After(1 * time.Second):
 		}
+
+		c.Lines <- &tail.Line{NotifyType: GlobLoopNotify, Time: time.Now()}
 		// TimeSliceが過去なら進める
 		if Truncate(time.Now(), c.RotatePeriod).Sub(c.TimeSlice) > 0 {
 			next := c.TimeSlice.Add(c.RotatePeriod)
@@ -142,21 +149,24 @@ func (c *TailEx) tailFile(ctx context.Context) error {
 	} else {
 		c.FilePath = c.Path
 	}
+	if c.FilePath != c.Pos.Name {
+		c.Location = nil
+	}
 	log.Printf("Start tail.TailFile(%s)", c.FilePath) //TODO: test
 	t, err := tail.TailFile(c.FilePath, c.Config.Config)
 	if err != nil {
 		return err
 	}
 	c.tail = t
+	//c.Lines <- &tail.Line{NotifyType: NewFileNotify, Time: time.Now()} //TODO: Testtest
 	return err
 }
 
 func (c *TailEx) Tell() (offset int64, err error) {
 	if c.tail == nil {
-		return c.offset, nil
+		return 0, nil
 	}
-	offset, err = c.tail.Tell()
-	return
+	return c.tail.Tell()
 }
 
 // Stop stops the tailing activity.
@@ -173,7 +183,8 @@ func (c *TailEx) Stop() error {
 }
 
 func (c *TailEx) tailFileSync(ctx context.Context) error {
-	var n <-chan time.Time
+	//var n <-chan time.Time
+	var nextFileTime time.Time
 	if c.PathFmt != "" {
 		next := c.TimeSlice.Add(c.RotatePeriod)
 		nextwait := next.Sub(time.Now())
@@ -182,7 +193,8 @@ func (c *TailEx) tailFileSync(ctx context.Context) error {
 			nextwait = 0
 		}
 		log.Printf("set timer nextwait:%v, TimeSlice:%v, old:%v", nextwait, c.TimeSlice, c.old) //TODO: test
-		n = time.After(nextwait + c.Delay)
+		nextFileTime = time.Now().Add(nextwait)
+		//n = time.After(nextwait + c.Delay)
 	}
 	for {
 		select {
@@ -192,9 +204,16 @@ func (c *TailEx) tailFileSync(ctx context.Context) error {
 			return ctx.Err()
 		case l := <-c.tail.Lines:
 			//log.Printf("l:%v,%s", l.Time, l.Text) //TODO:test
-			c.updateAt = l.Time
 			if c.old {
 				l.Time = c.TimeSlice.Add(c.RotatePeriod - 1*time.Second)
+			}
+			if l.NotifyType == tail.TickerNotify {
+				// cronolog のファイル更新
+				//if c.old && l.Time.Sub(c.updateAt) < c.Delay {
+				if !nextFileTime.IsZero() && !c.old && l.Time.Sub(nextFileTime) >= c.Delay {
+					log.Printf("set time.After:%v, l.Time:%v, old:%v", c.Delay, l.Time, c.old) //TODO: test
+					return nil
+				}
 			}
 			c.Lines <- l
 			/*
@@ -203,13 +222,6 @@ func (c *TailEx) tailFileSync(ctx context.Context) error {
 					log.Printf("Open FileInfo: Path:%s, CreateAt:%s", fi.Path, fi.CreateAt)
 					c.FileInfo <- fi
 			*/
-		case <-n: // cronolog のファイル更新
-			if c.old && time.Now().Sub(c.updateAt) < c.Delay {
-				log.Printf("set time.After:%v, c.updateAt:%v, old:%v", c.Delay, c.updateAt, c.old) //TODO: test
-				n = time.After(c.Delay)
-				continue
-			}
-			return nil
 		}
 	}
 }
