@@ -208,9 +208,9 @@ func (c *TailEx) tailFileSync(ctx context.Context) error {
 				l.Time = c.TimeSlice.Add(c.RotatePeriod - 1*time.Second)
 			}
 			if l.NotifyType == tail.TickerNotify {
-				// cronolog のファイル更新
 				//if c.old && l.Time.Sub(c.updateAt) < c.Delay {
 				if !nextFileTime.IsZero() && !c.old && l.Time.Sub(nextFileTime) >= c.Delay {
+					// cronolog のファイル更新
 					log.Printf("set time.After:%v, l.Time:%v, old:%v", c.Delay, l.Time, c.old) //TODO: test
 					return nil
 				}

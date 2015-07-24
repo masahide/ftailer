@@ -122,7 +122,7 @@ func (f *Ftail) lineNotifyAction(ctx context.Context, line *tail.Line) error {
 		if err != nil {
 			return err
 		}
-	case tail.TickerNotify: // 定期flush処理
+	case tail.TickerNotify, tailex.GlobLoopNotify: // 定期flush処理
 		if err := f.Flush(); err != nil {
 			return err
 		}
@@ -136,15 +136,6 @@ func (f *Ftail) lineNotifyAction(ctx context.Context, line *tail.Line) error {
 			f.lastSlice = timeSlice
 		}
 		// 古いDBを閉じる
-		if _, err := f.rec.CloseOldDbs(line.Time); err != nil {
-			log.Printf("CloseOldDbs err:%s", err)
-			return err
-		}
-	case tailex.GlobLoopNotify: // glob ファイル検索ループ ticker
-		// 古いDBを閉じる
-		if err := f.Flush(); err != nil {
-			return err
-		}
 		if _, err := f.rec.CloseOldDbs(line.Time); err != nil {
 			log.Printf("CloseOldDbs err:%s", err)
 			return err
