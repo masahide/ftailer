@@ -4,6 +4,8 @@ import (
 	"log"
 	"os"
 	"path"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/boltdb/bolt"
@@ -16,9 +18,10 @@ const (
 )
 
 type DB struct {
-	Path string
-	Name string
-	Time time.Time
+	RealFilePath string
+	Path         string
+	Name         string
+	Time         time.Time
 
 	*bolt.DB
 	fix bool
@@ -46,11 +49,10 @@ func (db *DB) createDB(ext string, pos *Position) error {
 	if db.DB != nil {
 		return nil
 	}
-	filePath := db.MakeFilePath()
-	os.MkdirAll(filePath, 0755)
-	fp := path.Join(filePath, db.MakeFileName())
+	db.RealFilePath = db.MakeRealFilePath(ext)
+	os.MkdirAll(filepath.Dir(db.RealFilePath), 0755)
 	var err error
-	db.DB, err = bolt.Open(fp+ext, 0644, nil)
+	db.DB, err = bolt.Open(db.RealFilePath, 0644, nil)
 	if err != nil {
 		db.DB = nil
 		return err
@@ -68,7 +70,7 @@ func (db *DB) createDB(ext string, pos *Position) error {
 		}
 		return nil
 	})
-	log.Printf("DB was created. %s", fp+ext)
+	log.Printf("DB was created. %s", db.RealFilePath)
 	return err
 }
 
@@ -76,15 +78,23 @@ func (db *DB) Open(ext string) error {
 	if db.DB != nil {
 		return nil
 	}
-	fp := path.Join(db.MakeFilePath(), db.MakeFileName())
+	db.RealFilePath = db.MakeRealFilePath(ext)
 	var err error
-	db.DB, err = bolt.Open(fp+ext, 0644, nil)
+	db.DB, err = bolt.Open(db.RealFilePath, 0644, nil)
 	if err != nil {
 		db.DB = nil
 	}
-	log.Printf("DB was opened.  %s", fp+ext)
+	log.Printf("DB was opened.  %s", db.RealFilePath)
 	return err
 }
+
+func (db *DB) MakeRealFilePath(ext string) string {
+	if db.RealFilePath == "" {
+		return db.MakeFilefullPath(ext)
+	}
+	return strings.TrimSuffix(db.RealFilePath, filepath.Ext(db.RealFilePath)) + ext
+}
+
 func (db *DB) Close(fix bool) error {
 	if db.DB == nil {
 		return nil
@@ -96,15 +106,16 @@ func (db *DB) Close(fix bool) error {
 		return err
 	}
 	db.DB = nil
+	recFilePath := db.MakeRealFilePath(recExt)
 	if db.fix {
 		// mv recExt FixExt
-		fileName := path.Join(db.MakeFilePath(), db.MakeFileName())
-		if err := os.Rename(fileName+recExt, fileName+FixExt); err != nil {
+		fixFilePath := db.MakeRealFilePath(FixExt)
+		if err := os.Rename(recFilePath, fixFilePath); err != nil {
 			return err
 		}
-		log.Printf("DB was closed.  %s -> %s", fileName+recExt, fileName+FixExt)
+		log.Printf("DB was closed.  %s -> %s", recFilePath, fixFilePath)
 	} else {
-		log.Printf("DB was closed.  %s", path.Join(db.MakeFilePath(), db.MakeFileName())+recExt)
+		log.Printf("DB was closed.  %s", recFilePath)
 	}
 	return nil
 }
@@ -112,21 +123,35 @@ func (db *DB) Delete(ext string) error {
 	if db.DB != nil {
 		return nil
 	}
-	fp := path.Join(db.MakeFilePath(), db.MakeFileName())
-	log.Printf("save mv %s -> %s", fp+ext, fp+".broken")
-	return os.Rename(fp+ext, fp+".broken")
+	extFilePath := db.MakeRealFilePath(ext)
+	brokenFilePath := db.MakeRealFilePath("broken")
+	log.Printf("save mv %s -> %s", extFilePath, brokenFilePath)
+	return os.Rename(extFilePath, brokenFilePath)
 }
 
-func MakeFilePath(filePath, fileName string, t time.Time) string {
+/*
+func makeFilePath(filePath, fileName string, t time.Time) string {
 	return path.Join(filePath, fileName, t.Format("20060102"))
 }
-func MakeDBFileName(t time.Time) string {
+*/
+
+/*
+func makeDBFileName(t time.Time) string {
 	return t.Format("150405")
 }
+*/
 
-func (db *DB) MakeFilePath() string {
-	return MakeFilePath(db.Path, db.Name, db.Time)
+/*
+func (db *DB) makeFilePath() string {
+	return path.Join(db.Path, db.Name, db.Time.Format("20060102"))
+	//	return makeFilePath(db.Path, db.Name, db.Time)
 }
-func (db *DB) MakeFileName() string {
-	return MakeDBFileName(db.Time)
+func (db *DB) makeFileName() string {
+	return db.Time.Format("150405")
+	//return makeDBFileName(db.Time)
+}
+*/
+
+func (db *DB) MakeFilefullPath(ext string) string {
+	return path.Join(db.Path, db.Name, db.Time.Format("20060102"), db.Time.Format("150405")) + ext
 }

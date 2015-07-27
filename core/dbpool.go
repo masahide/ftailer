@@ -174,7 +174,11 @@ func (r *DBpool) Init() (pos *Position, err error) {
 	}
 
 	// fixed fileを検索
-	db := &DB{Path: r.Path, Name: r.Name}
+	return searchFixedFile(r.Path, r.Name)
+}
+
+func searchFixedFile(dbpath, name string) (pos *Position, err error) {
+	db := &DB{Path: dbpath, Name: name}
 	dbfiles, err := FixGlob(db)
 	if err != nil || len(dbfiles) == 0 {
 		return nil, err
@@ -217,6 +221,8 @@ func (r *DBpool) recPositon() (*Position, error) {
 	return &p, err
 }
 
+/*
 func (r *DBpool) makeFilePath(t time.Time) string {
 	return MakeFilePath(r.Path, r.Name, t)
 }
+*/

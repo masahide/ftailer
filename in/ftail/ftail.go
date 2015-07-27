@@ -16,6 +16,7 @@ import (
 type Config struct {
 	Name   string
 	BufDir string
+	Pos    *core.Position
 	Period time.Duration // 分割保存インターバル
 
 	tailex.Config
@@ -71,7 +72,7 @@ func position(c Config) (pos *core.Position, err error) {
 func Start(ctx context.Context, c Config) error {
 	f := &Ftail{Config: c}
 	var err error
-	f.rec, err = core.NewRecorder(c.BufDir, c.Name, c.Period)
+	f.rec, err = core.NewRecorder(c.BufDir, c.Name, c.Period, c.Pos)
 	if err != nil {
 		log.Fatalln("NewRecorder err:", err)
 	}

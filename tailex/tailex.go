@@ -149,7 +149,7 @@ func (c *TailEx) tailFile(ctx context.Context) error {
 	} else {
 		c.FilePath = c.Path
 	}
-	if c.FilePath != c.Pos.Name {
+	if c.Pos != nil && c.FilePath != c.Pos.Name {
 		c.Location = nil
 	}
 	log.Printf("Start tail.TailFile(%s)", c.FilePath) //TODO: test
