@@ -8,14 +8,20 @@ import (
 	"golang.org/x/net/context"
 )
 
+const (
+	headerSize    = 4 * 1024
+	logrotateTime = 24*time.Hour - 5*time.Minute
+)
+
 // PollingFileWatcher polls the file for changes.
 type PollingFileWatcher struct {
 	Filename string
 	Size     int64
+	ModTime  time.Time
 }
 
 func NewPollingFileWatcher(filename string) *PollingFileWatcher {
-	fw := &PollingFileWatcher{filename, 0}
+	fw := &PollingFileWatcher{Filename: filename, Size: 0}
 	return fw
 }
 
@@ -43,6 +49,7 @@ func (fw *PollingFileWatcher) ChangeEvents(ctx context.Context, origFi os.FileIn
 	var prevModTime time.Time
 
 	fw.Size = origFi.Size()
+	fw.ModTime = origFi.ModTime()
 
 	go func() {
 		defer changes.Close()
@@ -83,6 +90,11 @@ func (fw *PollingFileWatcher) ChangeEvents(ctx context.Context, origFi os.FileIn
 			// File got truncated?
 			fw.Size = fi.Size()
 			if prevSize > 0 && prevSize > fw.Size {
+				changes.NotifyTruncated()
+				prevSize = fw.Size
+				continue
+			} else if prevSize > 0 && prevSize == fw.Size && fw.Size <= headerSize && fi.ModTime().Sub(fw.ModTime) > logrotateTime {
+				log.Printf("logrotateTime:%s", logrotateTime)
 				changes.NotifyTruncated()
 				prevSize = fw.Size
 				continue
