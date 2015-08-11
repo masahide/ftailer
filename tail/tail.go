@@ -420,18 +420,6 @@ func (tail *Tail) sendLine(line []byte) error {
 		return err
 	}
 	tail.Lines <- &Line{NotifyType: NewLineNotify, Text: line, Time: now, Filename: tail.Filename, OpenTime: tail.openTime, Offset: offset}
-
-	/*
-		if tail.Config.RateLimiter != nil {
-			ok := tail.Config.RateLimiter.Pour(uint16(1))
-			if !ok {
-				tail.Logger.Printf("Leaky bucket full (%v); entering 1s cooloff period.\n",
-					tail.Filename)
-				return false
-			}
-		}
-	*/
-
 	return nil
 }
 
