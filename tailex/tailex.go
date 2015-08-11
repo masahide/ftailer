@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/masahide/ftailer/core"
-	"github.com/masahide/tail"
+	"github.com/masahide/ftailer/tail"
 	"golang.org/x/net/context"
 )
 

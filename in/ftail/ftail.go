@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/masahide/ftailer/core"
+	"github.com/masahide/ftailer/tail"
 	"github.com/masahide/ftailer/tailex"
-	"github.com/masahide/tail"
 	"golang.org/x/net/context"
 )
 
