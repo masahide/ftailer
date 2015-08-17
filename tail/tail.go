@@ -48,15 +48,15 @@ type SeekInfo struct {
 // Config is used to specify how a file must be tailed.
 type Config struct {
 	// File-specifc
-	Location    *SeekInfo     // Seek to this location before tailing
-	ReOpen      bool          // Reopen recreated files (tail -F)
-	ReOpenDelay time.Duration // Reopen Delay
-	MustExist   bool          // Fail early if the file does not exist
-	Poll        bool          // Poll for file changes instead of using inotify
+	Location       *SeekInfo // Seek to this location before tailing
+	ReOpen         bool      // Reopen recreated files (tail -F)
+	MustExist      bool      // Fail early if the file does not exist
+	Poll           bool      // Poll for file changes instead of using inotify
+	TruncateReOpen bool      // copytruncate rotate
+	RenameReOpen   bool      // rename rotate
 
 	// Generic IO
 	Follow         bool          // Continue looking for new lines (tail -f)
-	MaxLineSize    int           // If non-zero, split longer lines into multiple lines
 	NotifyInterval time.Duration // Notice interval of the elapsed time
 
 	// Logger, when nil, is set to tail.DefaultLogger
@@ -69,16 +69,16 @@ type Tail struct {
 	Lines    chan *Line
 	Config
 
-	file   *os.File
-	reader *bufio.Reader
-	//tracker  *watch.InotifyTracker
+	file     *os.File
+	reader   *bufio.Reader
+	tracker  *watch.InotifyTracker
 	ticker   *time.Ticker
 	openTime time.Time
 
-	watcher      *watch.PollingFileWatcher
-	changes      *watch.FileChanges
-	reOpenNotify <-chan time.Time
-	reOpenModify chan time.Time
+	watcher watch.FileWatcher
+	changes *watch.FileChanges
+
+	lastDelChReceived time.Time // Last delete channel received time
 }
 
 var (
@@ -104,20 +104,17 @@ func TailFile(filename string, config Config) (*Tail, error) {
 		t.Logger = log.New(os.Stderr, "", log.LstdFlags)
 	}
 
-	t.watcher = watch.NewPollingFileWatcher(filename)
-	/*
-		if t.Poll {
-			t.watcher = watch.NewPollingFileWatcher(filename)
-		} else {
-			t.tracker = watch.NewInotifyTracker()
-			w, err := t.tracker.NewWatcher()
-			if err != nil {
-				return nil, err
-			}
-			t.Logger.Printf("start InotifyFileWatcher: %s", filename)
-			t.watcher = watch.NewInotifyFileWatcher(filename, w)
+	if t.Poll {
+		t.watcher = watch.NewPollingFileWatcher(filename)
+	} else {
+		t.tracker = watch.NewInotifyTracker()
+		w, err := t.tracker.NewWatcher()
+		if err != nil {
+			return nil, err
 		}
-	*/
+		t.Logger.Printf("start InotifyFileWatcher: %s", filename)
+		t.watcher = watch.NewInotifyFileWatcher(filename, w)
+	}
 
 	if t.MustExist {
 		var err error
@@ -208,7 +205,6 @@ func (tail *Tail) tailFileSync() {
 	defer cancel()
 	defer tail.close()
 
-	tail.reOpenNotify = make(chan time.Time)
 	tail.ticker = &time.Ticker{}
 	if tail.NotifyInterval != 0 {
 		tail.ticker = time.NewTicker(tail.NotifyInterval)
@@ -321,7 +317,6 @@ func (tail *Tail) waitForChanges(ctx context.Context) error {
 		tail.changes = tail.watcher.ChangeEvents(ctx, st)
 	}
 
-	tail.reOpenModify = make(chan time.Time)
 	for {
 
 		select {
@@ -334,36 +329,48 @@ func (tail *Tail) waitForChanges(ctx context.Context) error {
 			continue
 		case <-tail.changes.Modified:
 			return nil
-		case <-tail.reOpenModify:
-			return nil
-		case <-tail.changes.Deleted:
+		case <-tail.changes.Closed:
 			if tail.ReOpen {
-				tail.Logger.Printf("moved/deleted file %s ... Reopen delay %s", tail.Filename, tail.ReOpenDelay)
-				tail.reOpenNotify = time.After(tail.ReOpenDelay)
-				go reOpenModify(tail.reOpenModify, tail.ReOpenDelay)
-				continue
+				tail.Logger.Printf("IN_CLOSE_WRITE file %s. Re-opening ...", tail.Filename)
+				tail.changes = nil
+				if err := tail.reopen(ctx); err != nil {
+					return err
+				}
+				tail.Logger.Printf("Successfully reopened %s", tail.Filename)
+				tail.openReader()
+				return nil
+			} else {
+				tail.changes = nil
+				tail.Logger.Printf("Stopping tail as file no longer exists: %s", tail.Filename)
+				return ErrStop
+			}
+		case <-tail.changes.Deleted:
+			if tail.RenameReOpen {
+				tail.Logger.Printf("moved/deleted file %s ...", tail.Filename)
+				tail.changes = nil
+				// XXX: we must not log from a library.
+				tail.Logger.Printf("Re-opening moved/deleted file %s ...", tail.Filename)
+				if err := tail.reopen(ctx); err != nil {
+					return err
+				}
+				tail.Logger.Printf("Successfully reopened %s", tail.Filename)
+				tail.openReader()
+				return nil
 			} else {
 				tail.changes = nil
 				tail.Logger.Printf("Stopping tail as file no longer exists: %s", tail.Filename)
 				return ErrStop
 			}
 		case <-tail.changes.Truncated:
+			if !tail.TruncateReOpen {
+				continue
+			}
 			// Always reopen truncated files (Follow is true)
 			tail.Logger.Printf("Re-opening truncated file %s ...", tail.Filename)
 			if err := tail.reopen(ctx); err != nil {
 				return err
 			}
 			tail.Logger.Printf("Successfully reopened truncated %s", tail.Filename)
-			tail.openReader()
-			return nil
-		case <-tail.reOpenNotify:
-			tail.changes = nil
-			// XXX: we must not log from a library.
-			tail.Logger.Printf("Re-opening moved/deleted file %s ...", tail.Filename)
-			if err := tail.reopen(ctx); err != nil {
-				return err
-			}
-			tail.Logger.Printf("Successfully reopened %s", tail.Filename)
 			tail.openReader()
 			return nil
 		case <-ctx.Done():
@@ -373,21 +380,8 @@ func (tail *Tail) waitForChanges(ctx context.Context) error {
 	}
 }
 
-func reOpenModify(c chan time.Time, delay time.Duration) {
-	t := time.Now()
-	for time.Now().Sub(t) < delay {
-		time.Sleep(1 * time.Second)
-		c <- time.Now()
-	}
-}
-
 func (tail *Tail) openReader() {
-	if tail.MaxLineSize > 0 {
-		// add 2 to account for newline characters
-		tail.reader = bufio.NewReaderSize(tail.file, tail.MaxLineSize+2)
-	} else {
-		tail.reader = bufio.NewReader(tail.file)
-	}
+	tail.reader = bufio.NewReader(tail.file)
 	fi, err := os.Stat(tail.Filename)
 	if err != nil {
 		tail.openTime = time.Now()
@@ -427,9 +421,7 @@ func (tail *Tail) sendLine(line []byte) error {
 // meant to be invoked from a process's exit handler. Linux kernel may not
 // automatically remove inotify watches after the process exits.
 func (tail *Tail) Cleanup() {
-	/*
-		if tail.tracker != nil {
-			tail.tracker.CloseAll()
-		}
-	*/
+	if tail.tracker != nil {
+		tail.tracker.CloseAll()
+	}
 }
