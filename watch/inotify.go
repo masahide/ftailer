@@ -89,7 +89,7 @@ func (fw *InotifyFileWatcher) ChangeEvents(ctx context.Context, fi os.FileInfo) 
 				if !ok {
 					return
 				}
-				if evt.IsCreate() { // IN_CREATE 以外は無視
+				if !evt.IsCreate() { // IN_CREATE 以外は無視
 					continue
 				}
 				evtName, err := filepath.Abs(evt.Name)
