@@ -344,7 +344,7 @@ func (tail *Tail) waitForChanges(ctx context.Context) error {
 			return nil
 		case <-tail.changes.Rotated:
 			if tail.ReOpen {
-				tail.Logger.Printf("IN_CLOSE_WRITE file %s. Re-opening ...", tail.Filename)
+				tail.Logger.Printf("Rotated event file %s. Re-opening ...", tail.Filename)
 				tail.changes = nil
 				if err := tail.reopen(ctx); err != nil {
 					return err
