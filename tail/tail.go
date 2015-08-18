@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"golang.org/x/exp/inotify"
 	"golang.org/x/net/context"
 
 	"github.com/masahide/ftailer/watch"
@@ -122,7 +121,7 @@ func TailFile(filename string, config Config) (*Tail, error) {
 		}
 		dirname := filepath.Dir(t.Filename)
 		// Watch for new files to be created in the parent directory.
-		err = dw.AddWatch(dirname, inotify.IN_ONLYDIR)
+		err = dw.Watch(dirname)
 		if err != nil {
 			return nil, err
 		}

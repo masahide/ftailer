@@ -7,19 +7,19 @@ import (
 	"path/filepath"
 	"time"
 
-	"golang.org/x/exp/inotify"
+	"github.com/masahide/fsnotify"
 	"golang.org/x/net/context"
 )
 
 // InotifyFileWatcher uses inotify to monitor file changes.
 type InotifyFileWatcher struct {
 	Filename string
-	dw       *inotify.Watcher
-	w        *inotify.Watcher
+	dw       *fsnotify.Watcher
+	w        *fsnotify.Watcher
 	delay    time.Duration
 }
 
-func NewInotifyFileWatcher(filename string, dw, w *inotify.Watcher, delay time.Duration) *InotifyFileWatcher {
+func NewInotifyFileWatcher(filename string, dw, w *fsnotify.Watcher, delay time.Duration) *InotifyFileWatcher {
 	fw := &InotifyFileWatcher{
 		Filename: filename,
 		dw:       dw,
@@ -46,7 +46,7 @@ func (fw *InotifyFileWatcher) BlockUntilExists(ctx context.Context) error {
 		select {
 		case evt, ok := <-fw.dw.Event:
 			if !ok {
-				return fmt.Errorf("inotify watcher has been closed")
+				return fmt.Errorf("fsnotify watcher has been closed")
 			}
 			evtName, err := filepath.Abs(evt.Name)
 			if err != nil {
@@ -73,7 +73,7 @@ func (fw *InotifyFileWatcher) ChangeEvents(ctx context.Context, fi os.FileInfo) 
 	go func() {
 		defer fw.w.RemoveWatch(fw.Filename)
 		defer changes.Close()
-		var mask uint32
+		var inCreate bool
 		var CreateTimer <-chan time.Time
 		fwFilename, err := filepath.Abs(fw.Filename)
 		if err != nil {
@@ -81,7 +81,7 @@ func (fw *InotifyFileWatcher) ChangeEvents(ctx context.Context, fi os.FileInfo) 
 		}
 
 		for {
-			var evt *inotify.Event
+			var evt *fsnotify.FileEvent
 			var ok bool
 
 			select {
@@ -89,7 +89,7 @@ func (fw *InotifyFileWatcher) ChangeEvents(ctx context.Context, fi os.FileInfo) 
 				if !ok {
 					return
 				}
-				if evt.Mask&inotify.IN_CREATE == 0 { // IN_CREATE 以外は無視
+				if evt.IsCreate() { // IN_CREATE 以外は無視
 					continue
 				}
 				evtName, err := filepath.Abs(evt.Name)
@@ -97,7 +97,7 @@ func (fw *InotifyFileWatcher) ChangeEvents(ctx context.Context, fi os.FileInfo) 
 					return
 				}
 				if evtName != fwFilename {
-					mask |= inotify.IN_CREATE
+					inCreate = true
 					CreateTimer = time.After(5 * time.Second)
 					continue
 				}
@@ -114,12 +114,12 @@ func (fw *InotifyFileWatcher) ChangeEvents(ctx context.Context, fi os.FileInfo) 
 			}
 
 			switch {
-			case evt.Mask&inotify.IN_CLOSE_WRITE != 0:
-				if mask&inotify.IN_CREATE != 0 {
+			case evt.IsCloseWrite():
+				if inCreate {
 					changes.NotifyRotated()
 					return
 				}
-			case evt.Mask&inotify.IN_MODIFY != 0:
+			case evt.IsModify():
 				changes.NotifyModified()
 			}
 		}

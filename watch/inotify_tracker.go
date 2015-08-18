@@ -4,32 +4,31 @@ import (
 	"log"
 	"sync"
 
-	//"gopkg.in/fsnotify.v0"
-	"golang.org/x/exp/inotify"
+	"github.com/masahide/fsnotify"
 )
 
 type InotifyTracker struct {
 	mux      sync.Mutex
-	watchers map[*inotify.Watcher]bool
+	watchers map[*fsnotify.Watcher]bool
 }
 
 func NewInotifyTracker() *InotifyTracker {
 	t := new(InotifyTracker)
-	t.watchers = make(map[*inotify.Watcher]bool)
+	t.watchers = make(map[*fsnotify.Watcher]bool)
 	return t
 }
 
-func (t *InotifyTracker) NewWatcher() (*inotify.Watcher, error) {
+func (t *InotifyTracker) NewWatcher() (*fsnotify.Watcher, error) {
 	t.mux.Lock()
 	defer t.mux.Unlock()
-	w, err := inotify.NewWatcher()
+	w, err := fsnotify.NewWatcher()
 	if err == nil {
 		t.watchers[w] = true
 	}
 	return w, err
 }
 
-func (t *InotifyTracker) CloseWatcher(w *inotify.Watcher) (err error) {
+func (t *InotifyTracker) CloseWatcher(w *fsnotify.Watcher) (err error) {
 	t.mux.Lock()
 	defer t.mux.Unlock()
 	if _, ok := t.watchers[w]; ok {
