@@ -7,8 +7,10 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"path/filepath"
 	"time"
 
+	"golang.org/x/exp/inotify"
 	"golang.org/x/net/context"
 
 	"github.com/masahide/ftailer/watch"
@@ -48,12 +50,14 @@ type SeekInfo struct {
 // Config is used to specify how a file must be tailed.
 type Config struct {
 	// File-specifc
-	Location       *SeekInfo // Seek to this location before tailing
-	ReOpen         bool      // Reopen recreated files (tail -F)
-	MustExist      bool      // Fail early if the file does not exist
-	Poll           bool      // Poll for file changes instead of using inotify
-	TruncateReOpen bool      // copytruncate rotate
-	RenameReOpen   bool      // rename rotate
+	Location    *SeekInfo     // Seek to this location before tailing
+	ReOpen      bool          // Reopen recreated files (tail -F)
+	ReOpenDelay time.Duration // Reopen Delay
+
+	MustExist      bool // Fail early if the file does not exist
+	Poll           bool // Poll for file changes instead of using inotify
+	TruncateReOpen bool // copytruncate rotate
+	RenameReOpen   bool // rename rotate
 
 	// Generic IO
 	Follow         bool          // Continue looking for new lines (tail -f)
@@ -112,8 +116,18 @@ func TailFile(filename string, config Config) (*Tail, error) {
 		if err != nil {
 			return nil, err
 		}
+		dw, err := t.tracker.NewWatcher()
+		if err != nil {
+			return nil, err
+		}
+		dirname := filepath.Dir(t.Filename)
+		// Watch for new files to be created in the parent directory.
+		err = dw.AddWatch(dirname, inotify.IN_ONLYDIR)
+		if err != nil {
+			return nil, err
+		}
 		t.Logger.Printf("start InotifyFileWatcher: %s", filename)
-		t.watcher = watch.NewInotifyFileWatcher(filename, w)
+		t.watcher = watch.NewInotifyFileWatcher(filename, dw, w, t.ReOpenDelay)
 	}
 
 	if t.MustExist {
@@ -329,7 +343,7 @@ func (tail *Tail) waitForChanges(ctx context.Context) error {
 			continue
 		case <-tail.changes.Modified:
 			return nil
-		case <-tail.changes.Closed:
+		case <-tail.changes.Rotated:
 			if tail.ReOpen {
 				tail.Logger.Printf("IN_CLOSE_WRITE file %s. Re-opening ...", tail.Filename)
 				tail.changes = nil
@@ -344,35 +358,6 @@ func (tail *Tail) waitForChanges(ctx context.Context) error {
 				tail.Logger.Printf("Stopping tail as file no longer exists: %s", tail.Filename)
 				return ErrStop
 			}
-		case <-tail.changes.Deleted:
-			if tail.RenameReOpen {
-				tail.Logger.Printf("moved/deleted file %s ...", tail.Filename)
-				tail.changes = nil
-				// XXX: we must not log from a library.
-				tail.Logger.Printf("Re-opening moved/deleted file %s ...", tail.Filename)
-				if err := tail.reopen(ctx); err != nil {
-					return err
-				}
-				tail.Logger.Printf("Successfully reopened %s", tail.Filename)
-				tail.openReader()
-				return nil
-			} else {
-				tail.changes = nil
-				tail.Logger.Printf("Stopping tail as file no longer exists: %s", tail.Filename)
-				return ErrStop
-			}
-		case <-tail.changes.Truncated:
-			if !tail.TruncateReOpen {
-				continue
-			}
-			// Always reopen truncated files (Follow is true)
-			tail.Logger.Printf("Re-opening truncated file %s ...", tail.Filename)
-			if err := tail.reopen(ctx); err != nil {
-				return err
-			}
-			tail.Logger.Printf("Successfully reopened truncated %s", tail.Filename)
-			tail.openReader()
-			return nil
 		case <-ctx.Done():
 			return ErrStop
 		}

@@ -3,21 +3,29 @@ package watch
 import "log"
 
 type FileChanges struct {
-	Modified  chan bool // Channel to get notified of modifications
-	Truncated chan bool // Channel to get notified of truncations
-	Deleted   chan bool // Channel to get notified of deletions/renames
-	Closed    chan bool // Channel to get notified of deletions/renames
+	Modified chan bool // Channel to get notified of modifications
+	Rotated  chan bool // Channel to get notified of logrotate
+	/*
+		Truncated chan bool // Channel to get notified of truncations
+		Deleted   chan bool // Channel to get notified of deletions/renames
+	*/
 }
 
 func NewFileChanges() *FileChanges {
 	return &FileChanges{
-		make(chan bool), make(chan bool), make(chan bool), make(chan bool)}
+		Modified: make(chan bool),
+		Rotated:  make(chan bool),
+	}
 }
 
+func (fc *FileChanges) NotifyRotated() {
+	sendOnlyIfEmpty(fc.Modified)
+}
 func (fc *FileChanges) NotifyModified() {
 	sendOnlyIfEmpty(fc.Modified)
 }
 
+/*
 func (fc *FileChanges) NotifyTruncated() {
 	sendOnlyIfEmpty(fc.Truncated)
 }
@@ -27,15 +35,18 @@ func (fc *FileChanges) NotifyDeleted() {
 }
 
 func (fc *FileChanges) NotifyClosed() {
-	sendOnlyIfEmpty(fc.Closed)
+	sendOnlyIfEmpty(fc.Rotated)
 }
+*/
 
 func (fc *FileChanges) Close() {
 	log.Printf("Close FileChanges.")
 	close(fc.Modified)
-	close(fc.Truncated)
-	close(fc.Deleted)
-	close(fc.Closed)
+	close(fc.Rotated)
+	/*
+		close(fc.Truncated)
+		close(fc.Deleted)
+	*/
 }
 
 // sendOnlyIfEmpty sends on a bool channel only if the channel has no
