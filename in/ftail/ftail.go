@@ -51,7 +51,7 @@ func position(c Config) (pos *core.Position, err error) {
 		filePath, err = tailex.GlobSearch(searchPath)
 		if err == tailex.ErrNoSuchFile {
 			log.Printf("ftail position() GlobSearch(%s)  err: %s", searchPath, err)
-			return &core.Position{}, nil
+			return nil, nil
 		} else if err != nil {
 			log.Printf("ftail position() GlobSearch(%s)  err: %s", searchPath, err)
 			return nil, err
@@ -78,16 +78,22 @@ func Start(ctx context.Context, c Config) error {
 	}
 	defer f.rec.AllClose()
 
-	f.Pos = f.rec.Position()
-	if f.Pos == nil {
-		if f.Pos, err = position(c); err != nil {
-			log.Fatalln("position err:", err)
-		}
-	}
 	f.Config.Config.Config = tailDefaultConfig
 	f.ReOpenDelay = 5 * time.Second
 	if f.Delay != 0 {
 		f.ReOpenDelay = f.Delay
+	}
+	f.Pos = f.rec.Position()
+	if f.Pos == nil {
+		for {
+			if f.Pos, err = position(c); err != nil {
+				log.Fatalln("position err:", err)
+			}
+			if f.Pos != nil {
+				break
+			}
+			time.Sleep(f.ReOpenDelay)
+		}
 	}
 	log.Printf("f.Pos:%v:%v", f.Pos.Name, f.Pos.Offset)
 	f.Location = &tail.SeekInfo{Offset: f.Pos.Offset}
