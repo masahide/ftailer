@@ -212,6 +212,7 @@ func (c *TailEx) tailFileSync(ctx context.Context) error {
 				if !nextFileTime.IsZero() && !c.old && l.Time.Sub(nextFileTime) >= c.Delay {
 					// cronolog のファイル更新
 					log.Printf("set time.After:%v, l.Time:%v, old:%v", c.Delay, l.Time, c.old) //TODO: test
+					c.Pos = nil
 					return nil
 				}
 			}
