@@ -89,7 +89,7 @@ func (fw *InotifyFileWatcher) ChangeEvents(ctx context.Context, fi os.FileInfo) 
 				if !ok {
 					return
 				}
-				if !evt.IsCreate() { // IN_CREATE 以外は無視
+				if !evt.IsCreate() { // IsCreate 以外は無視
 					continue
 				}
 				evtName, err := filepath.Abs(evt.Name)
@@ -98,7 +98,7 @@ func (fw *InotifyFileWatcher) ChangeEvents(ctx context.Context, fi os.FileInfo) 
 				}
 				if evtName == fwFilename {
 					inCreate = true
-					log.Printf("Received IN_CREATE: %s", fwFilename)
+					log.Printf("Received IsCreate: %s", fwFilename)
 					CreateTimer = time.After(fw.delay)
 					continue
 				}
@@ -108,8 +108,8 @@ func (fw *InotifyFileWatcher) ChangeEvents(ctx context.Context, fi os.FileInfo) 
 					return
 				}
 			case <-CreateTimer:
-				log.Printf("IN_CREATE timeout: %s", fwFilename)
-				changes.NotifyRotated() //IN_CREATEからタイムアウトしたら強制rotate
+				log.Printf("IsCreate timeout: %s", fwFilename)
+				changes.NotifyRotated() //IsCreateからタイムアウトしたら強制rotate
 				return
 			case <-ctx.Done():
 				return
@@ -118,7 +118,7 @@ func (fw *InotifyFileWatcher) ChangeEvents(ctx context.Context, fi os.FileInfo) 
 			switch {
 			case evt.IsCloseWrite():
 				if inCreate {
-					log.Printf("Received IN_CREATE & IN_CLOSE_WRITE: %s", fwFilename)
+					log.Printf("Received IsCreate & IsCloseWrite: %s", fwFilename)
 					changes.NotifyRotated()
 					return
 				}
