@@ -47,6 +47,17 @@ var testLogConfig = ftail.Config{
 	},
 }
 
+var testlogrotateConfig = ftail.Config{
+	Name:   "logrotate.log",
+	BufDir: "testbuf",
+	Period: 5 * time.Minute,
+	Config: tailex.Config{
+		Path: "testlog/logrotate.log",
+		//Path:   "test.log",
+		Config: tail.Config{},
+	},
+}
+
 func main() {
 	var (
 		ctx    context.Context
@@ -75,7 +86,7 @@ func main() {
 
 	wg.Add(1)
 	go func() {
-		err := ftail.Start(ctx, testLogConfig)
+		err := ftail.Start(ctx, testlogrotateConfig)
 		if err != nil {
 			log.Printf("ftail.Start err:%v", err)
 		}

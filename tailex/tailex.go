@@ -192,7 +192,6 @@ func (c *TailEx) tailFileSync(ctx context.Context) error {
 		}
 		log.Printf("set timer nextwait:%v, TimeSlice:%v, old:%v", nextwait, c.TimeSlice, c.old) //TODO: test
 		nextFileTime = time.Now().Add(nextwait)
-		//n = time.After(nextwait + c.Delay)
 	}
 	for {
 		select {
@@ -206,7 +205,6 @@ func (c *TailEx) tailFileSync(ctx context.Context) error {
 				l.Time = c.TimeSlice.Add(c.RotatePeriod - 1*time.Second)
 			}
 			if l.NotifyType == tail.TickerNotify {
-				//if c.old && l.Time.Sub(c.updateAt) < c.Delay {
 				if !nextFileTime.IsZero() && !c.old && l.Time.Sub(nextFileTime) >= c.Delay {
 					// cronolog のファイル更新
 					log.Printf("set time.After:%v, l.Time:%v, old:%v", c.Delay, l.Time, c.old) //TODO: test

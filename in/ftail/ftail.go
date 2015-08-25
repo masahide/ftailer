@@ -89,7 +89,7 @@ func Start(ctx context.Context, c Config) error {
 	if f.Delay != 0 {
 		f.ReOpenDelay = f.Delay
 	}
-	log.Printf("f.Pos:%v:%v", f.Pos.Name, f.Pos.Offset)
+	log.Printf("f.Pos: Name:%v, Offset:%v", f.Pos.Name, f.Pos.Offset)
 	f.Location = &tail.SeekInfo{Offset: f.Pos.Offset}
 	t := tailex.TailFile(ctx, f.Config.Config)
 	//var buf bytes.Buffer
