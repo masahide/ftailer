@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/masahide/ftailer/core"
 	"github.com/masahide/ftailer/tail"
 	"golang.org/x/net/context"
 )
@@ -25,7 +24,7 @@ type Config struct {
 	RotatePeriod  time.Duration // ログローテーション間隔
 	Delay         time.Duration // 切り替えwait
 	LinesChanSize int           // Lines channel size
-	Pos           *core.Position
+	//Pos           *core.Position
 
 	tail.Config
 }
@@ -98,6 +97,8 @@ func (c *TailEx) tailFileSyncLoop(ctx context.Context) {
 		c.tail.Cleanup() //  古い方をcleanup
 		//log.Printf("TailEx end tail.cleanup %s:%s", c.Path, c.TimeSlice)
 		c.tail = nil
+		//c.Pos.Offset = 0
+		c.Location = nil
 
 		if tailFileSyncErr != nil {
 			return
@@ -148,9 +149,6 @@ func (c *TailEx) tailFile(ctx context.Context) error {
 		c.Config.Config.ReOpen = false
 	} else {
 		c.FilePath = c.Path
-	}
-	if c.Pos != nil && c.FilePath != c.Pos.Name {
-		c.Location = nil
 	}
 	log.Printf("Start tail.TailFile(%s)", c.FilePath) //TODO: test
 	t, err := tail.TailFile(c.FilePath, c.Config.Config)
@@ -212,7 +210,6 @@ func (c *TailEx) tailFileSync(ctx context.Context) error {
 				if !nextFileTime.IsZero() && !c.old && l.Time.Sub(nextFileTime) >= c.Delay {
 					// cronolog のファイル更新
 					log.Printf("set time.After:%v, l.Time:%v, old:%v", c.Delay, l.Time, c.old) //TODO: test
-					c.Pos = nil
 					return nil
 				}
 			}
