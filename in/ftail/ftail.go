@@ -90,7 +90,11 @@ func Start(ctx context.Context, c Config) error {
 		f.ReOpenDelay = f.Delay
 	}
 	log.Printf("f.Pos: Name:%v, Offset:%v", f.Pos.Name, f.Pos.Offset)
-	f.Location = &tail.SeekInfo{Offset: f.Pos.Offset}
+	posTimeSlise := tailex.Truncate(f.Pos.CreateAt, c.RotatePeriod)
+	nowTimeSlise := tailex.Truncate(time.Now(), c.RotatePeriod)
+	if nowTimeSlise.Equal(posTimeSlise) { // 読み込んだポジションのcreateAtが現在のtimesliseと同じ場合
+		f.Location = &tail.SeekInfo{Offset: f.Pos.Offset}
+	}
 	t := tailex.TailFile(ctx, f.Config.Config)
 	//var buf bytes.Buffer
 	f.buf = bytes.Buffer{}
