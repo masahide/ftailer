@@ -150,7 +150,7 @@ func (c *TailEx) tailFile(ctx context.Context) error {
 	} else {
 		c.FilePath = c.Path
 	}
-	log.Printf("Start tail.TailFile(%s) offset:%v", c.FilePath, c.Location.Offset) //TODO: test
+	log.Printf("Start tail.TailFile(%s) location:%# v", c.FilePath, c.Location) //TODO: test
 	t, err := tail.TailFile(c.FilePath, c.Config.Config)
 	if err != nil {
 		return err
