@@ -1,6 +1,7 @@
 package core
 
 import (
+	"fmt"
 	"strconv"
 	"time"
 
@@ -12,9 +13,16 @@ const (
 )
 
 type Position struct {
-	Name     string
-	CreateAt time.Time
-	Offset   int64
+	Name       string
+	CreateAt   time.Time
+	Offset     int64
+	HeadHash   string
+	HashLength int64
+}
+
+func (p Position) String() string {
+	return fmt.Sprintf("Name:%s, CreateAt:%s, Offset:%d, HeadHash:%s, hashLen:%d", p.Name, p.CreateAt, p.Offset, p.HeadHash, p.HashLength)
+
 }
 
 func createPosBucket(tx *bolt.Tx) error {
@@ -32,6 +40,12 @@ func (p Position) Put(tx *bolt.Tx) error {
 		return err
 	}
 	if err = b.Put([]byte("Offset"), []byte(strconv.FormatInt(p.Offset, 16))); err != nil {
+		return err
+	}
+	if err = b.Put([]byte("HeadHash"), []byte(p.HeadHash)); err != nil {
+		return err
+	}
+	if err = b.Put([]byte("HashLength"), []byte(strconv.FormatInt(p.HashLength, 16))); err != nil {
 		return err
 	}
 	return nil
@@ -57,6 +71,12 @@ func GetPositon(tx *bolt.Tx) (Position, error) {
 	}
 	if p.Offset, err = strconv.ParseInt(string(value), 16, 64); err != nil {
 		return p, err
+	}
+	if value = b.Get([]byte("HeadHash")); value != nil {
+		p.HeadHash = string(value)
+	}
+	if value = b.Get([]byte("HeadHash")); value != nil {
+		p.HashLength, _ = strconv.ParseInt(string(value), 16, 64)
 	}
 	return p, nil
 }
