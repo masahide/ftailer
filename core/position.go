@@ -75,7 +75,7 @@ func GetPositon(tx *bolt.Tx) (Position, error) {
 	if value = b.Get([]byte("HeadHash")); value != nil {
 		p.HeadHash = string(value)
 	}
-	if value = b.Get([]byte("HeadHash")); value != nil {
+	if value = b.Get([]byte("HashLength")); value != nil {
 		p.HashLength, _ = strconv.ParseInt(string(value), 16, 64)
 	}
 	return p, nil
