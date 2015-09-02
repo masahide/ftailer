@@ -9,7 +9,7 @@ type Recorder struct {
 
 func (r *Recorder) Position() *Position { return r.pos }
 
-func NewRecorder(filePath, name string, period time.Duration, Pos *Position) (*Recorder, error) {
+func NewRecorder(filePath, name string, period time.Duration) (*Recorder, error) {
 	var err error
 	r := &Recorder{
 		DBpool: DBpool{
@@ -21,9 +21,6 @@ func NewRecorder(filePath, name string, period time.Duration, Pos *Position) (*R
 	r.pos, err = r.Init()
 	if err != nil {
 		return nil, err
-	}
-	if r.pos == nil {
-		r.pos = Pos
 	}
 	return r, nil
 }

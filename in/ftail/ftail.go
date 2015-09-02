@@ -22,7 +22,6 @@ import (
 type Config struct {
 	Name            string
 	BufDir          string
-	Pos             *core.Position
 	Period          time.Duration // 分割保存インターバル
 	MaxHeadHashSize int64
 
@@ -32,6 +31,7 @@ type Config struct {
 type Ftail struct {
 	rec       *core.Recorder
 	lastSlice time.Time
+	Pos       *core.Position
 	Config
 
 	buf bytes.Buffer
@@ -86,7 +86,7 @@ func Start(ctx context.Context, c Config) error {
 	//	f.MaxHeadHashSize = defaultMaxHeadHashSize
 	//}
 	var err error
-	f.rec, err = core.NewRecorder(c.BufDir, c.Name, c.Period, c.Pos)
+	f.rec, err = core.NewRecorder(c.BufDir, c.Name, c.Period)
 	if err != nil {
 		log.Fatalln("NewRecorder err:", err)
 	}
