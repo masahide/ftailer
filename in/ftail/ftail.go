@@ -241,7 +241,7 @@ func (f *Ftail) getHeadHash(fname string, getLength int64) (hash string, length 
 	}
 	defer readFile.Close()
 	length, err = io.CopyN(f.headHash, readFile, getLength)
-	if err != io.EOF {
+	if err != nil && err != io.EOF {
 		return
 	}
 	hash = strconv.FormatUint(f.headHash.Sum64(), 16)
