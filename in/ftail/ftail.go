@@ -234,6 +234,9 @@ func (f *Ftail) Flush() error {
 }
 
 func (f *Ftail) getHeadHash(fname string, getLength int64) (hash string, length int64, err error) {
+	if f.MaxHeadHashSize == 0 || f.Pos.Name == "" {
+		return "", 0, nil
+	}
 	var readFile *os.File
 	readFile, err = os.Open(fname)
 	if err != nil {
@@ -248,6 +251,6 @@ func (f *Ftail) getHeadHash(fname string, getLength int64) (hash string, length 
 	default:
 		return
 	}
-	hash = strconv.FormatUint(f.headHash.Sum64(), 16)		
+	hash = strconv.FormatUint(f.headHash.Sum64(), 16)
 	return
 }
