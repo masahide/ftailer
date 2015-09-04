@@ -186,7 +186,7 @@ func (f *Ftail) lineNotifyAction(ctx context.Context, line *tail.Line) error {
 		f.Pos.Offset = line.Offset
 		f.Pos.HeadHash, f.Pos.HashLength, err = f.getHeadHash(f.Pos.Name, f.MaxHeadHashSize)
 		if err != nil {
-			log.Printf(" err:%s", err)
+			log.Printf("getHeadHash err:%s", err)
 			return err
 		}
 	}
