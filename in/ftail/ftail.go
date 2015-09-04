@@ -186,7 +186,7 @@ func (f *Ftail) lineNotifyAction(ctx context.Context, line *tail.Line) error {
 		f.Pos.Offset = line.Offset
 		f.Pos.HeadHash, f.Pos.HashLength, err = f.getHeadHash(f.Pos.Name, f.MaxHeadHashSize)
 		if err != nil {
-			log.Printf("getHeadHash err:%s", err)
+			log.Printf(" err:%s", err)
 			return err
 		}
 	}
@@ -241,9 +241,13 @@ func (f *Ftail) getHeadHash(fname string, getLength int64) (hash string, length 
 	}
 	defer readFile.Close()
 	length, err = io.CopyN(f.headHash, readFile, getLength)
-	if err != io.EOF {
+	switch err {
+	case nil:
+	case io.EOF:
+		err = nil
+	default:
 		return
 	}
-	hash = strconv.FormatUint(f.headHash.Sum64(), 16)
+	hash = strconv.FormatUint(f.headHash.Sum64(), 16)		
 	return
 }
