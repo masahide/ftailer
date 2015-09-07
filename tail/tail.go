@@ -351,6 +351,7 @@ func (tail *Tail) waitForChanges(ctx context.Context) error {
 				}
 				tail.Logger.Printf("Successfully reopened %s", tail.Filename)
 				tail.openReader()
+				tail.Lines <- &Line{NotifyType: NewFileNotify, Filename: tail.Filename, Offset: 0, Time: time.Now(), OpenTime: tail.openTime}
 				return nil
 			} else {
 				tail.changes = nil
