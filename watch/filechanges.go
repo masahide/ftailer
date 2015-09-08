@@ -19,7 +19,7 @@ func NewFileChanges() *FileChanges {
 }
 
 func (fc *FileChanges) NotifyRotated() {
-	sendOnlyIfEmpty(fc.Modified)
+	sendOnlyIfEmpty(fc.Rotated)
 }
 func (fc *FileChanges) NotifyModified() {
 	sendOnlyIfEmpty(fc.Modified)

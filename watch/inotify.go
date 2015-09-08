@@ -85,6 +85,8 @@ func (fw *InotifyFileWatcher) ChangeEvents(ctx context.Context, fi os.FileInfo) 
 			var ok bool
 
 			select {
+			case <-ctx.Done():
+				return
 			case evt, ok = <-fw.dw.Event: // ディレクトリ監視イベント
 				if !ok {
 					return
@@ -110,8 +112,6 @@ func (fw *InotifyFileWatcher) ChangeEvents(ctx context.Context, fi os.FileInfo) 
 			case <-CreateTimer:
 				log.Printf("IsCreate timeout: %s", fwFilename)
 				changes.NotifyRotated() //IsCreateからタイムアウトしたら強制rotate
-				return
-			case <-ctx.Done():
 				return
 			}
 

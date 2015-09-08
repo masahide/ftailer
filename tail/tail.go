@@ -342,7 +342,10 @@ func (tail *Tail) waitForChanges(ctx context.Context) error {
 			continue
 		case <-tail.changes.Modified:
 			return nil
-		case <-tail.changes.Rotated:
+		case rotated := <-tail.changes.Rotated:
+			if !rotated {
+				return nil
+			}
 			if tail.ReOpen {
 				tail.Logger.Printf("Rotated event file %s. Re-opening ...", tail.Filename)
 				tail.changes = nil
