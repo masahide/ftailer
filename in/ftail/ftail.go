@@ -114,6 +114,7 @@ func Start(ctx context.Context, c Config) error {
 				log.Printf("match headHash: %s", f.Pos)
 				f.Location = &tail.SeekInfo{Offset: f.Pos.Offset}
 			} else {
+				log.Printf("not match headHash: %s", f.Pos)
 				f.Pos.HeadHash = hash
 				f.Pos.HashLength = length
 			}
@@ -189,6 +190,7 @@ func (f *Ftail) lineNotifyAction(ctx context.Context, line *tail.Line) error {
 			log.Printf("getHeadHash err:%s", err)
 			return err
 		}
+		log.Printf("NewFileNotify getHeadHash :%s", f.Pos)
 	}
 	return nil
 }
@@ -213,7 +215,9 @@ func (f *Ftail) Write(line *tail.Line) (err error) {
 	f.Pos.CreateAt = line.OpenTime
 	f.Pos.Offset = line.Offset
 	if f.Pos.HashLength < f.MaxHeadHashSize {
-		f.addHash(line.Text)
+		if err := f.addHash(line.Text); err != nil {
+			return nil
+		}
 	}
 	_, err = f.Writer.Write(line.Text)
 	return err
@@ -243,6 +247,7 @@ func (f *Ftail) getHeadHash(fname string, getLength int64) (hash string, length 
 		return
 	}
 	defer readFile.Close()
+	f.headHash = fnv.New64()
 	length, err = io.CopyN(f.headHash, readFile, getLength)
 	switch err {
 	case nil:
