@@ -340,26 +340,26 @@ func (tail *Tail) waitForChanges(ctx context.Context) error {
 			}
 			tail.Lines <- &Line{NotifyType: TickerNotify, Time: time.Now(), Filename: tail.Filename, OpenTime: tail.openTime, Offset: offset}
 			continue
-		case <-tail.changes.Modified:
-			return nil
-		case rotated := <-tail.changes.Rotated:
-			if !rotated {
+		case mode := <-tail.changes.Modified:
+			switch mode {
+			case watch.None, watch.Modified:
 				return nil
-			}
-			if tail.ReOpen {
-				tail.Logger.Printf("Rotated event file %s. Re-opening ...", tail.Filename)
-				tail.changes = nil
-				if err := tail.reopen(ctx); err != nil {
-					return err
+			case watch.Rotated:
+				if tail.ReOpen {
+					tail.Logger.Printf("Rotated event file %s. Re-opening ...", tail.Filename)
+					tail.changes = nil
+					if err := tail.reopen(ctx); err != nil {
+						return err
+					}
+					tail.Logger.Printf("Successfully reopened %s", tail.Filename)
+					tail.openReader()
+					tail.Lines <- &Line{NotifyType: NewFileNotify, Filename: tail.Filename, Offset: 0, Time: time.Now(), OpenTime: tail.openTime}
+					return nil
+				} else {
+					tail.changes = nil
+					tail.Logger.Printf("Stopping tail as file no longer exists: %s", tail.Filename)
+					return ErrStop
 				}
-				tail.Logger.Printf("Successfully reopened %s", tail.Filename)
-				tail.openReader()
-				tail.Lines <- &Line{NotifyType: NewFileNotify, Filename: tail.Filename, Offset: 0, Time: time.Now(), OpenTime: tail.openTime}
-				return nil
-			} else {
-				tail.changes = nil
-				tail.Logger.Printf("Stopping tail as file no longer exists: %s", tail.Filename)
-				return ErrStop
 			}
 		case <-ctx.Done():
 			return ErrStop

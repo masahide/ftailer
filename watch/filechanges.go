@@ -3,26 +3,32 @@ package watch
 import "log"
 
 type FileChanges struct {
-	Modified chan bool // Channel to get notified of modifications
-	Rotated  chan bool // Channel to get notified of logrotate
+	Modified chan int // Channel to get notified of modifications
 	/*
 		Truncated chan bool // Channel to get notified of truncations
 		Deleted   chan bool // Channel to get notified of deletions/renames
 	*/
 }
 
+const (
+	chanSize = 1000
+
+	None = iota
+	Rotated
+	Modified
+)
+
 func NewFileChanges() *FileChanges {
 	return &FileChanges{
-		Modified: make(chan bool),
-		Rotated:  make(chan bool),
+		Modified: make(chan int, chanSize),
 	}
 }
 
 func (fc *FileChanges) NotifyRotated() {
-	sendOnlyIfEmpty(fc.Rotated)
+	fc.Modified <- Rotated
 }
 func (fc *FileChanges) NotifyModified() {
-	sendOnlyIfEmpty(fc.Modified)
+	fc.Modified <- Modified
 }
 
 /*
@@ -42,7 +48,6 @@ func (fc *FileChanges) NotifyClosed() {
 func (fc *FileChanges) Close() {
 	log.Printf("Close FileChanges.")
 	close(fc.Modified)
-	close(fc.Rotated)
 	/*
 		close(fc.Truncated)
 		close(fc.Deleted)
