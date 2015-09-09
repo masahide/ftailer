@@ -6,6 +6,7 @@ import (
 	"hash"
 	"hash/fnv"
 	"io"
+	"io/ioutil"
 	"log"
 	"os"
 	"strconv"
@@ -38,6 +39,7 @@ type Ftail struct {
 	*zlib.Writer
 	lastTime time.Time
 	headHash hash.Hash64
+	head     []byte
 }
 
 var tailDefaultConfig = tail.Config{
@@ -81,6 +83,7 @@ func Start(ctx context.Context, c Config) error {
 	f := &Ftail{
 		Config:   c,
 		headHash: fnv.New64(),
+		head:     []byte{},
 	}
 	//if f.MaxHeadHashSize == 0 {
 	//	f.MaxHeadHashSize = defaultMaxHeadHashSize
@@ -106,17 +109,19 @@ func Start(ctx context.Context, c Config) error {
 	log.Printf("f.Pos: %s", f.Pos)
 
 	if f.MaxHeadHashSize != 0 && f.Pos.Name != "" {
+		oldhead := f.head
 		hash, length, err := f.getHeadHash(f.Pos.Name, f.Pos.HashLength)
 		if err != nil {
 			log.Printf("getHeadHash err:%s", err)
 		} else {
 			if f.Pos.HeadHash == hash && f.Pos.HashLength == length { // ポジションファイルのハッシュ値と一致した場合はSeekInfoをセット
-				log.Printf("match headHash: %s", f.Pos)
+				log.Printf("match headHash: %s, head:%s", f.Pos, f.head)
 				f.Location = &tail.SeekInfo{Offset: f.Pos.Offset}
 			} else {
-				log.Printf("not match headHash: %s", f.Pos)
+				log.Printf("not match headHash: %s, head:%s", oldhead)
 				f.Pos.HeadHash = hash
 				f.Pos.HashLength = length
+				log.Printf("not match headHash new: %s, head:%s", f.Pos, f.head)
 			}
 		}
 	} else {
@@ -204,8 +209,10 @@ func (f *Ftail) addHash(line []byte) error {
 	if err != nil {
 		return err
 	}
+	f.head = append(f.head, line...)
 	f.Pos.HeadHash = strconv.FormatUint(f.headHash.Sum64(), 16)
 	f.Pos.HashLength += int64(written)
+	log.Printf("addHash name:%s Pos:%s, head:%s", f.Name, f.Pos, string(f.head))
 	return nil
 }
 
@@ -216,7 +223,7 @@ func (f *Ftail) Write(line *tail.Line) (err error) {
 	f.Pos.Offset = line.Offset
 	if f.Pos.HashLength < f.MaxHeadHashSize {
 		if err := f.addHash(line.Text); err != nil {
-			return nil
+			return err
 		}
 	}
 	_, err = f.Writer.Write(line.Text)
@@ -248,7 +255,10 @@ func (f *Ftail) getHeadHash(fname string, getLength int64) (hash string, length 
 	}
 	defer readFile.Close()
 	f.headHash = fnv.New64()
-	length, err = io.CopyN(f.headHash, readFile, getLength)
+	tee := io.TeeReader(io.LimitReader(readFile, getLength), f.headHash)
+	f.head, err = ioutil.ReadAll(tee)
+	length = int64(len(f.head))
+	//length, err = io.CopyN(f.headHash, readFile, getLength)
 	switch err {
 	case nil:
 	case io.EOF:
