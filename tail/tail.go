@@ -360,6 +360,9 @@ func (tail *Tail) waitForChanges(ctx context.Context) error {
 					tail.Logger.Printf("Stopping tail as file no longer exists: %s", tail.Filename)
 					return ErrStop
 				}
+			default:
+				log.Printf("tail.changes.Modified: mode:%v", mode)
+				return ErrStop
 			}
 		case <-ctx.Done():
 			return ErrStop

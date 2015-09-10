@@ -118,7 +118,7 @@ func Start(ctx context.Context, c Config) error {
 				log.Printf("match headHash: %s, head:%s", f.Pos, f.head)
 				f.Location = &tail.SeekInfo{Offset: f.Pos.Offset}
 			} else {
-				log.Printf("not match headHash: %s, head:%s", oldhead)
+				log.Printf("not match headHash old: %s, head:%s", f.Pos, oldhead)
 				f.Pos.HeadHash = hash
 				f.Pos.HashLength = length
 				log.Printf("not match headHash new: %s, head:%s", f.Pos, f.head)
@@ -190,7 +190,11 @@ func (f *Ftail) lineNotifyAction(ctx context.Context, line *tail.Line) error {
 		f.Pos.Name = line.Filename
 		f.Pos.CreateAt = line.OpenTime
 		f.Pos.Offset = line.Offset
-		f.Pos.HeadHash, f.Pos.HashLength, err = f.getHeadHash(f.Pos.Name, f.MaxHeadHashSize)
+		maxsize := line.Offset
+		if f.MaxHeadHashSize < line.Offset {
+			maxsize = f.MaxHeadHashSize
+		}
+		f.Pos.HeadHash, f.Pos.HashLength, err = f.getHeadHash(f.Pos.Name, maxsize)
 		if err != nil {
 			log.Printf("getHeadHash err:%s", err)
 			return err
@@ -245,6 +249,8 @@ func (f *Ftail) Flush() error {
 }
 
 func (f *Ftail) getHeadHash(fname string, getLength int64) (hash string, length int64, err error) {
+	f.headHash = fnv.New64()
+	f.head = []byte{}
 	if f.MaxHeadHashSize == 0 || f.Pos.Name == "" {
 		return "", 0, nil
 	}
@@ -254,7 +260,6 @@ func (f *Ftail) getHeadHash(fname string, getLength int64) (hash string, length 
 		return
 	}
 	defer readFile.Close()
-	f.headHash = fnv.New64()
 	tee := io.TeeReader(io.LimitReader(readFile, getLength), f.headHash)
 	f.head, err = ioutil.ReadAll(tee)
 	length = int64(len(f.head))
