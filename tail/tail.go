@@ -59,7 +59,6 @@ type Config struct {
 	RenameReOpen   bool // rename rotate
 
 	// Generic IO
-	Follow         bool          // Continue looking for new lines (tail -f)
 	NotifyInterval time.Duration // Notice interval of the elapsed time
 
 	// Logger, when nil, is set to tail.DefaultLogger
@@ -252,45 +251,8 @@ func (tail *Tail) tailFileSync() {
 
 	// Read line by line.
 	for {
-		// grab the position in case we need to back up in the event of a half-line
-		offset, err := tail.Tell()
-		if err != nil {
-			cancel()
-			tail.Logger.Printf("tail.Tell() err: %s", err)
-			return
-		}
-
-		line, err := tail.readLine()
-
-		// Process `line` even if err is EOF.
-		if err == nil {
-			err = tail.sendLine(line)
-			if err != nil {
-				tail.Logger.Printf("tail.sendLine() err: %s", err)
-				cancel()
-			}
-		} else if err == io.EOF {
-			if !tail.Follow {
-				if len(line) != 0 {
-					err = tail.sendLine(line)
-					if err != nil {
-						tail.Logger.Printf("tail.sendLine() err: %s", err)
-						cancel()
-					}
-				}
-				return
-			}
-
-			if tail.Follow && len(line) != 0 {
-				// this has the potential to never return the last line if
-				// it's not followed by a newline; seems a fair trade here
-				err := tail.seekTo(SeekInfo{Offset: offset, Whence: 0})
-				if err != nil {
-					tail.Logger.Printf("tail.seekTo() err: %s", err)
-					cancel()
-					return
-				}
-			}
+		err := tail.readSend()
+		if err == io.EOF {
 
 			// When EOF is reached, wait for more data to become
 			// available. Wait strategy is based on the `tail.watcher`
@@ -303,7 +265,7 @@ func (tail *Tail) tailFileSync() {
 				}
 				return
 			}
-		} else {
+		} else if err != nil {
 			// non-EOF error
 			tail.Logger.Printf("Error reading %s: %s", tail.Filename, err)
 			cancel()
@@ -316,6 +278,42 @@ func (tail *Tail) tailFileSync() {
 		default:
 		}
 	}
+}
+
+func (tail *Tail) readSend() error {
+	offset, err := tail.Tell()
+	if err != nil {
+		tail.Logger.Printf("tail.Tell() err: %s", err)
+		return err
+	}
+
+	line, err := tail.readLine()
+
+	// Process `line` even if err is EOF.
+	if err == nil {
+		err = tail.sendLine(line)
+		if err != nil {
+			tail.Logger.Printf("tail.sendLine() err: %s", err)
+			return err
+		}
+		return nil
+	}
+
+	if err != io.EOF {
+		return err
+	}
+
+	if len(line) != 0 {
+		// this has the potential to never return the last line if
+		// it's not followed by a newline; seems a fair trade here
+		err := tail.seekTo(SeekInfo{Offset: offset, Whence: 0})
+		if err != nil {
+			tail.Logger.Printf("tail.seekTo() err: %s", err)
+			return err
+		}
+	}
+	return io.EOF
+
 }
 
 // waitForChanges waits until the file has been appended, deleted,
@@ -345,6 +343,15 @@ func (tail *Tail) waitForChanges(ctx context.Context) error {
 			case watch.None, watch.Modified:
 				return nil
 			case watch.Rotated:
+				for {
+					err := tail.readSend()
+					if err == io.EOF {
+						break
+					}
+					if err != nil {
+						return err
+					}
+				}
 				if tail.ReOpen {
 					tail.Logger.Printf("Rotated event file %s. Re-opening ...", tail.Filename)
 					tail.changes = nil

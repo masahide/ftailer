@@ -43,7 +43,6 @@ type Ftail struct {
 }
 
 var tailDefaultConfig = tail.Config{
-	Follow: true,
 	ReOpen: true,
 	Poll:   false,
 	//OpenNotify:  true,
@@ -54,7 +53,7 @@ var tailDefaultConfig = tail.Config{
 // ポジション情報がない場合に実ファイルから取得
 func position(c Config) (pos *core.Position, err error) {
 	var fi os.FileInfo
-	filePath := c.Path
+	var filePath string
 	if c.PathFmt != "" { // cronolog
 		timeSlice := tailex.Truncate(c.Config.Time, c.RotatePeriod)
 		searchPath := tailex.Time2Path(c.PathFmt, timeSlice)
@@ -64,6 +63,15 @@ func position(c Config) (pos *core.Position, err error) {
 			return &core.Position{}, nil
 		} else if err != nil {
 			log.Printf("ftail position() GlobSearch(%s)  err: %s", searchPath, err)
+			return nil, err
+		}
+	} else {
+		filePath, err = tailex.GlobSearch(c.Path)
+		if err == tailex.ErrNoSuchFile {
+			log.Printf("ftail position() GlobSearch(%s)  err: %s", c.Path, err)
+			return &core.Position{}, nil
+		} else if err != nil {
+			log.Printf("ftail position() GlobSearch(%s)  err: %s", c.Path, err)
 			return nil, err
 		}
 	}

@@ -108,10 +108,10 @@ func (c *TailEx) tailFileSyncLoop(ctx context.Context) {
 }
 
 // Glob検索で見つかるまで 1*time.Secondでpolling
-func (c *TailEx) GlobSearchLoop(ctx context.Context) (string, error) {
+func (c *TailEx) GlobSearchLoop(ctx context.Context, pathFmt string) (string, error) {
 	firstFlag := true
 	for {
-		globPath := Time2Path(c.PathFmt, c.TimeSlice)
+		globPath := Time2Path(pathFmt, c.TimeSlice)
 		s, err := GlobSearch(globPath)
 		if err == nil {
 			return s, nil // 見つかった
@@ -119,7 +119,7 @@ func (c *TailEx) GlobSearchLoop(ctx context.Context) (string, error) {
 			return "", err // その他のエラー
 		}
 		if firstFlag {
-			log.Printf("%s:GlobSearch s:'%s', %s", err, globPath, c.PathFmt)
+			log.Printf("%s:GlobSearch s:'%s', %s", err, globPath, pathFmt)
 			firstFlag = false
 		}
 		select {
@@ -133,7 +133,7 @@ func (c *TailEx) GlobSearchLoop(ctx context.Context) (string, error) {
 		// TimeSliceが過去なら進める
 		if Truncate(time.Now(), c.RotatePeriod).Sub(c.TimeSlice) > 0 {
 			next := c.TimeSlice.Add(c.RotatePeriod)
-			log.Printf("GlobSearchLoop %s: add TimeSlice:%s -> %v", c.PathFmt, c.TimeSlice, next)
+			log.Printf("GlobSearchLoop %s: add TimeSlice:%s -> %v", pathFmt, c.TimeSlice, next)
 			c.TimeSlice = next
 		}
 	}
@@ -142,13 +142,16 @@ func (c *TailEx) GlobSearchLoop(ctx context.Context) (string, error) {
 func (c *TailEx) tailFile(ctx context.Context) error {
 	var err error
 	if c.PathFmt != "" {
-		c.FilePath, err = c.GlobSearchLoop(ctx)
+		c.FilePath, err = c.GlobSearchLoop(ctx, c.PathFmt)
 		if err != nil {
 			return err
 		}
 		c.Config.Config.ReOpen = false
 	} else {
-		c.FilePath = c.Path
+		c.FilePath, err = c.GlobSearchLoop(ctx, c.Path)
+		if err != nil {
+			return err
+		}
 	}
 	log.Printf("Start tail.TailFile(%s) location:%# v", c.FilePath, c.Location) //TODO: test
 	t, err := tail.TailFile(c.FilePath, c.Config.Config)
@@ -170,7 +173,7 @@ func (c *TailEx) Tell() (offset int64, err error) {
 // Stop stops the tailing activity.
 func (c *TailEx) Stop() error {
 	if c.tail != nil {
-		log.Printf("tail.Stop() Path:%s", c.Path)
+		log.Printf("tail.Stop() Path:%s", c.FilePath)
 		if err := c.tail.Stop(); err != nil {
 			return err
 		}
