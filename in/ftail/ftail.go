@@ -51,7 +51,7 @@ var tailDefaultConfig = tail.Config{
 }
 
 // ポジション情報がない場合に実ファイルから取得
-func position(c Config) (pos *core.Position, err error) {
+func (f *Ftail) position(c Config) (pos *core.Position, err error) {
 	var fi os.FileInfo
 	var filePath string
 	if c.PathFmt != "" { // cronolog
@@ -79,10 +79,15 @@ func position(c Config) (pos *core.Position, err error) {
 		log.Printf("Start os.Stat('%s')  err: %s,  ", filePath, err)
 		return nil, err
 	}
+	offset := int64(0)
+	// HeadHashの保存対象で、現在のファイルサイズがf.MaxHeadHashSizeより大きいものだけオフセットを現在のサイズにする。
+	if f.MaxHeadHashSize != 0 && f.Pos.Name != "" && fi.Size() > f.MaxHeadHashSize {
+		offset = fi.Size()
+	}
 	pos = &core.Position{
 		Name:     filePath,
 		CreateAt: fi.ModTime(),
-		Offset:   0,
+		Offset:   offset,
 	}
 	return
 }
@@ -105,7 +110,7 @@ func Start(ctx context.Context, c Config) error {
 
 	f.Pos = f.rec.Position()
 	if f.Pos == nil {
-		if f.Pos, err = position(c); err != nil {
+		if f.Pos, err = f.position(c); err != nil {
 			log.Fatalln("position err:", err)
 		}
 	}
