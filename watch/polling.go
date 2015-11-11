@@ -1,6 +1,7 @@
 package watch
 
 import (
+	"log"
 	"os"
 	"time"
 
@@ -37,9 +38,77 @@ func (fw *PollingFileWatcher) BlockUntilExists(ctx context.Context) error {
 	panic("unreachable")
 }
 
+/*
 func (fw *PollingFileWatcher) ChangeEvents(ctx context.Context, origFi os.FileInfo) *FileChanges {
 	// TODO: Not implement.
 	changes := NewFileChanges()
+	return changes
+}
+*/
+
+func (fw *PollingFileWatcher) ChangeEvents(ctx context.Context, origFi os.FileInfo) *FileChanges {
+	changes := NewFileChanges()
+	var prevModTime time.Time
+
+	// XXX: use tomb.Tomb to cleanly manage these goroutines. replace
+	// the fatal (below) with tomb's Kill.
+
+	fw.Size = origFi.Size()
+
+	go func() {
+		defer changes.Close()
+
+		var retry int = 0
+
+		prevSize := fw.Size
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+
+			time.Sleep(POLL_DURATION)
+			fi, err := os.Stat(fw.Filename)
+			if err != nil {
+				if os.IsNotExist(err) {
+					// File does not exist (has been deleted).
+					changes.NotifyRotated()
+					return
+				}
+
+				if permissionErrorRetry(err, &retry) {
+					continue
+				}
+
+				// XXX: report this error back to the user
+				log.Printf("Failed to stat file %v: %v", fw.Filename, err)
+			}
+
+			// File got moved/renamed?
+			if !os.SameFile(origFi, fi) {
+				changes.NotifyRotated()
+				return
+			}
+
+			// File got truncated?
+			fw.Size = fi.Size()
+			if prevSize > 0 && prevSize > fw.Size {
+				changes.NotifyRotated()
+				prevSize = fw.Size
+				continue
+			}
+			prevSize = fw.Size
+
+			// File was appended to (changed)?
+			modTime := fi.ModTime()
+			if modTime != prevModTime {
+				prevModTime = modTime
+				changes.NotifyModified()
+			}
+		}
+	}()
+
 	return changes
 }
 
