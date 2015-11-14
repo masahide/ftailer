@@ -34,15 +34,23 @@ func (r *DBpool) open(t time.Time) (*DB, Position, error) {
 	}
 	db = &DB{Name: r.Name, Path: r.Path, Time: t}
 	if err = db.Open(recExt); err != nil {
-		return nil, p, err
-	}
-	defer func() {
-		if r := recover(); r != nil {
+		if serr, ok := err.(*InvalidPositionError); ok {
 			db.Close(false)
 			db.Delete(recExt)
-			log.Fatalf("Recovered in db.GetPositon : %v", r)
+			log.Fatalf("Recovered in DBpool.open : %s", serr)
+		} else {
+			return nil, p, err
 		}
-	}()
+	}
+	/*
+		defer func() {
+			if r := recover(); r != nil {
+				db.Close(false)
+				db.Delete(recExt)
+				log.Fatalf("Recovered in db.GetPositon : %v", r)
+			}
+		}()
+	*/
 	if p, err = db.GetPositon(); err != nil {
 		return nil, p, err
 	}
@@ -82,7 +90,7 @@ func (r *DBpool) isOpen(t time.Time) *DB {
 }
 
 // Put
-func (r *DBpool) Put(record Record, pos *Position) error {
+func (r *DBpool) Put(record Record, pos *Position, gz bool) error {
 	baseTime := record.Time.Truncate(r.Period)
 	//log.Printf("inTime:%s baseTime:%s", r.inTime, baseTime) //TODO: test
 	if r.inTime.Sub(baseTime) > 0 {
@@ -103,7 +111,7 @@ func (r *DBpool) Put(record Record, pos *Position) error {
 			return err
 		}
 	}
-	if err = db.put(record, pos); err != nil {
+	if err = db.put(record, pos, gz); err != nil {
 		return err
 	}
 	return nil

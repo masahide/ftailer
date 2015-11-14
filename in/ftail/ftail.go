@@ -2,7 +2,6 @@ package ftail
 
 import (
 	"bytes"
-	"compress/zlib"
 	"hash"
 	"hash/fnv"
 	"io"
@@ -35,8 +34,8 @@ type Ftail struct {
 	Pos       *core.Position
 	Config
 
-	buf bytes.Buffer
-	*zlib.Writer
+	buf      bytes.Buffer
+	Writer   io.WriteCloser
 	lastTime time.Time
 	headHash hash.Hash64
 	head     []byte
@@ -147,10 +146,13 @@ func Start(ctx context.Context, c Config) error {
 	t := tailex.TailFile(ctx, f.Config.Config)
 	//var buf bytes.Buffer
 	f.buf = bytes.Buffer{}
-	f.Writer, err = zlib.NewWriterLevel(&f.buf, zlib.BestCompression)
-	if err != nil {
-		log.Fatalln("NewZlibWriter err:", err)
-	}
+	/*
+		f.Writer, err = zlib.NewWriterLevel(&f.buf, zlib.BestCompression)
+		if err != nil {
+			log.Fatalln("NewZlibWriter err:", err)
+		}
+	*/
+	f.Writer = NopCloser(&f.buf)
 	defer f.Flush()
 
 	for {
@@ -247,14 +249,22 @@ func (f *Ftail) Write(line *tail.Line) (err error) {
 	return err
 }
 
+type nopCloser struct{ io.Writer }
+
+func (nopCloser) Close() error { return nil }
+
+// NopCloser returns a ReadCloser with a no-op Close method wrapping
+// the provided Reader r.
+func NopCloser(r io.Writer) io.WriteCloser {
+	return nopCloser{r}
+}
 func (f *Ftail) Flush() error {
 	if f.buf.Len() <= 0 {
 		return nil
 	}
 	f.Writer.Close()
-	err := f.rec.Put(core.Record{Time: f.lastTime, Data: f.buf.Bytes()}, f.Pos)
+	err := f.rec.Put(core.Record{Time: f.lastTime, Data: f.buf.Bytes()}, f.Pos, false)
 	f.buf.Reset()
-	f.Reset(&f.buf)
 	if err != nil {
 		log.Printf("Flush %s err:%s", f.Pos.Name, err)
 	}

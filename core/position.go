@@ -2,10 +2,7 @@ package core
 
 import (
 	"fmt"
-	"strconv"
 	"time"
-
-	"github.com/boltdb/bolt"
 )
 
 const (
@@ -25,6 +22,7 @@ func (p Position) String() string {
 
 }
 
+/*
 func createPosBucket(tx *bolt.Tx) error {
 	_, err := tx.CreateBucketIfNotExists([]byte(posBucketName))
 	return err
@@ -50,33 +48,12 @@ func (p Position) Put(tx *bolt.Tx) error {
 	}
 	return nil
 }
+*/
 
-func GetPositon(tx *bolt.Tx) (Position, error) {
-	var err error
+func GetPositon(db *FtailDB) (Position, error) {
 	var p Position
-	var value []byte
-	b := tx.Bucket([]byte(posBucketName))
-	if value = b.Get([]byte("Name")); value == nil {
-		return p, ErrNotFound
+	if db.PosError != nil {
+		return p, db.PosError
 	}
-	p.Name = string(value)
-	if value = b.Get([]byte("CreateAt")); value == nil {
-		return p, ErrNotFound
-	}
-	if p.CreateAt, err = time.Parse(time.RFC3339, string(value)); err != nil {
-		return p, err
-	}
-	if value = b.Get([]byte("Offset")); value == nil {
-		return p, ErrNotFound
-	}
-	if p.Offset, err = strconv.ParseInt(string(value), 16, 64); err != nil {
-		return p, err
-	}
-	if value = b.Get([]byte("HeadHash")); value != nil {
-		p.HeadHash = string(value)
-	}
-	if value = b.Get([]byte("HashLength")); value != nil {
-		p.HashLength, _ = strconv.ParseInt(string(value), 16, 64)
-	}
-	return p, nil
+	return *db.Pos, nil
 }

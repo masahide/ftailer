@@ -3,18 +3,19 @@ package core
 import (
 	"bytes"
 	"compress/zlib"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"os"
+	"strings"
 	"time"
-
-	"github.com/boltdb/bolt"
 )
 
 const (
 	recordBucketName = "records"
-	CompressSize     = 100
+	CompressSize     = 1000000
 	gzipped          = '1'
 	plain            = '0'
 )
@@ -33,7 +34,7 @@ func makeKey(t time.Time, pos *Position, compress byte) []byte {
 	return []byte(fmt.Sprintf("%s_%s_%016x_%c", t.Format(time.RFC3339Nano), pos.CreateAt.Format(time.RFC3339), pos.Offset, compress))
 }
 
-func (r Record) Put(tx *bolt.Tx, pos *Position, gz bool) error {
+func (r Record) Put(db *FtailDB, pos *Position, gz bool) error {
 	c := byte(plain)
 	if gz { //  すでに圧縮済み
 		c = byte(gzipped)
@@ -43,11 +44,10 @@ func (r Record) Put(tx *bolt.Tx, pos *Position, gz bool) error {
 		}
 		c = byte(gzipped)
 	}
-	b := tx.Bucket([]byte(recordBucketName))
-	b.FillPercent = 1.0
-	return b.Put(makeKey(r.Time, pos, c), r.Data)
+	return db.Put(r, pos, c)
 }
 
+/*
 func GetRecord(tx *bolt.Tx, key []byte) (Record, error) {
 	r := Record{}
 	if len(key) == 0 {
@@ -67,26 +67,33 @@ func GetRecord(tx *bolt.Tx, key []byte) (Record, error) {
 	}
 	return r, nil
 }
+*/
 
-func Cursor(tx *bolt.Tx) *bolt.Cursor {
-	return tx.Bucket([]byte(recordBucketName)).Cursor()
+func Cursor(db *FtailDB) *os.File {
+	return db.file
 }
 
-func ReadRecord(key, value []byte) (io.ReadCloser, error) {
-	if value == nil {
-		return nil, ErrNotFoundKey
+func ReadRecord(f *os.File) (io.ReadCloser, error) {
+	dec := json.NewDecoder(f)
+	var m Row
+	if err := dec.Decode(&m); err == io.EOF {
+		return nil, err
+	} else if err != nil {
+		return nil, err
 	}
-	if key[len(key)-1] == byte(gzipped) {
-		b := bytes.NewReader(value)
+	if m.Bin != nil {
+		b := bytes.NewReader(m.Bin)
 		return zlib.NewReader(b)
 	}
-	return ioutil.NopCloser(bytes.NewReader(value)), nil
+	return ioutil.NopCloser(strings.NewReader(m.Text)), nil
 }
 
+/*
 func createRecordBucket(tx *bolt.Tx) error {
 	_, err := tx.CreateBucketIfNotExists([]byte(recordBucketName))
 	return err
 }
+*/
 
 func (r Record) Compress() error {
 	var buf bytes.Buffer
@@ -101,6 +108,8 @@ func (r Record) Compress() error {
 	//log.Printf("gzipped size: %d", len(r.Data)) //TODO: test
 	return nil
 }
+
+/*
 func (r Record) Decompress() error {
 	b := bytes.NewReader(r.Data)
 	z, err := zlib.NewReader(b)
@@ -111,3 +120,4 @@ func (r Record) Decompress() error {
 	z.Close()
 	return err
 }
+*/

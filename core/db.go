@@ -7,8 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/boltdb/bolt"
 )
 
 const (
@@ -23,66 +21,46 @@ type DB struct {
 	Name         string
 	Time         time.Time
 
-	*bolt.DB
+	*FtailDB
 	fix bool
 }
 
-func (d *DB) put(record Record, pos *Position) error {
-	err := d.Update(func(tx *bolt.Tx) error {
-		if err := record.Put(tx, pos, true); err != nil {
-			return err
-		}
-		return pos.Put(tx)
-	})
-	return err
+func (d *DB) put(record Record, pos *Position, gz bool) error {
+	return record.Put(d.FtailDB, pos, true)
 }
 
 func (d *DB) GetPositon() (pos Position, err error) {
-	err = d.View(func(tx *bolt.Tx) error {
-		pos, err = GetPositon(tx)
-		return err
-	})
-	return pos, err
+	if d.PosError != nil {
+		return Position{}, d.PosError
+	}
+	return *d.Pos, nil
 }
 
 func (db *DB) createDB(ext string, pos *Position) error {
-	if db.DB != nil {
+	if db.FtailDB != nil {
 		return nil
 	}
 	db.RealFilePath = db.MakeRealFilePath(ext)
 	os.MkdirAll(filepath.Dir(db.RealFilePath), 0755)
 	var err error
-	db.DB, err = bolt.Open(db.RealFilePath, 0644, nil)
+	db.FtailDB, err = FtailDBOpen(db.RealFilePath, 0644, nil)
 	if err != nil {
-		db.DB = nil
+		db.FtailDB = nil
 		return err
 	}
-	err = db.DB.Update(func(tx *bolt.Tx) error {
-		// Create a bucket.
-		if err = createRecordBucket(tx); err != nil {
-			return err
-		}
-		if err = createPosBucket(tx); err != nil {
-			return err
-		}
-		if err = pos.Put(tx); err != nil {
-			return err
-		}
-		return nil
-	})
 	log.Printf("DB was created. %s", db.RealFilePath)
 	return err
 }
 
 func (db *DB) Open(ext string) error {
-	if db.DB != nil {
+	if db.FtailDB != nil {
 		return nil
 	}
 	db.RealFilePath = db.MakeRealFilePath(ext)
 	var err error
-	db.DB, err = bolt.Open(db.RealFilePath, 0644, nil)
+	db.FtailDB, err = FtailDBOpen(db.RealFilePath, 0644, nil)
 	if err != nil {
-		db.DB = nil
+		db.FtailDB = nil
 	}
 	log.Printf("DB was opened.  %s", db.RealFilePath)
 	return err
@@ -96,16 +74,16 @@ func (db *DB) MakeRealFilePath(ext string) string {
 }
 
 func (db *DB) Close(fix bool) error {
-	if db.DB == nil {
+	if db.FtailDB == nil {
 		return nil
 	}
 	if fix {
 		db.fix = true
 	}
-	if err := db.DB.Close(); err != nil {
+	if err := db.FtailDB.Close(); err != nil {
 		return err
 	}
-	db.DB = nil
+	db.FtailDB = nil
 	recFilePath := db.MakeRealFilePath(recExt)
 	if db.fix {
 		// mv recExt FixExt
@@ -120,7 +98,7 @@ func (db *DB) Close(fix bool) error {
 	return nil
 }
 func (db *DB) Delete(ext string) error {
-	if db.DB != nil {
+	if db.FtailDB != nil {
 		return nil
 	}
 	extFilePath := db.MakeRealFilePath(ext)
