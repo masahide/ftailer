@@ -1,17 +1,6 @@
 package core
 
-import (
-	"bytes"
-	"compress/zlib"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"io"
-	"io/ioutil"
-	"os"
-	"strings"
-	"time"
-)
+import "errors"
 
 const (
 	recordBucketName = "records"
@@ -20,16 +9,19 @@ const (
 	plain            = '0'
 )
 
+/*
 type Record struct {
 	Time time.Time
 	Data []byte
 }
+*/
 
 var (
 	ErrKeySizeZero = errors.New("Key size is zero.")
 	ErrNotFoundKey = errors.New("Not found key.")
 )
 
+/*
 func makeKey(t time.Time, pos *Position, compress byte) []byte {
 	return []byte(fmt.Sprintf("%s_%s_%016x_%c", t.Format(time.RFC3339Nano), pos.CreateAt.Format(time.RFC3339), pos.Offset, compress))
 }
@@ -47,7 +39,6 @@ func (r Record) Put(db *FtailDB, pos *Position, gz bool) error {
 	return db.Put(r, pos, c)
 }
 
-/*
 func GetRecord(tx *bolt.Tx, key []byte) (Record, error) {
 	r := Record{}
 	if len(key) == 0 {
@@ -67,7 +58,6 @@ func GetRecord(tx *bolt.Tx, key []byte) (Record, error) {
 	}
 	return r, nil
 }
-*/
 
 func Cursor(db *FtailDB) *os.File {
 	return db.file
@@ -87,13 +77,13 @@ func ReadRecord(f *os.File) (io.ReadCloser, error) {
 	}
 	return ioutil.NopCloser(strings.NewReader(m.Text)), nil
 }
+*/
 
 /*
 func createRecordBucket(tx *bolt.Tx) error {
 	_, err := tx.CreateBucketIfNotExists([]byte(recordBucketName))
 	return err
 }
-*/
 
 func (r Record) Compress() error {
 	var buf bytes.Buffer
@@ -108,6 +98,7 @@ func (r Record) Compress() error {
 	//log.Printf("gzipped size: %d", len(r.Data)) //TODO: test
 	return nil
 }
+*/
 
 /*
 func (r Record) Decompress() error {

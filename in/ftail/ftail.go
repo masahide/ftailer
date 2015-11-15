@@ -263,7 +263,7 @@ func (f *Ftail) Flush() error {
 		return nil
 	}
 	f.Writer.Close()
-	err := f.rec.Put(core.Record{Time: f.lastTime, Data: f.buf.Bytes()}, f.Pos, false)
+	err := f.rec.Put(core.Row{Time: f.lastTime, Pos: *f.Pos, Text: f.buf.String()})
 	f.buf.Reset()
 	if err != nil {
 		log.Printf("Flush %s err:%s", f.Pos.Name, err)

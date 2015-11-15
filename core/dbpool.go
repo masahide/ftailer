@@ -34,7 +34,7 @@ func (r *DBpool) open(t time.Time) (*DB, Position, error) {
 	}
 	db = &DB{Name: r.Name, Path: r.Path, Time: t}
 	if err = db.Open(recExt); err != nil {
-		if serr, ok := err.(*InvalidPositionError); ok {
+		if serr, ok := err.(*InvalidFtailDBError); ok {
 			db.Close(false)
 			db.Delete(recExt)
 			log.Fatalf("Recovered in DBpool.open : %s", serr)
@@ -90,8 +90,8 @@ func (r *DBpool) isOpen(t time.Time) *DB {
 }
 
 // Put
-func (r *DBpool) Put(record Record, pos *Position, gz bool) error {
-	baseTime := record.Time.Truncate(r.Period)
+func (r *DBpool) Put(row Row) error {
+	baseTime := row.Time.Truncate(r.Period)
 	//log.Printf("inTime:%s baseTime:%s", r.inTime, baseTime) //TODO: test
 	if r.inTime.Sub(baseTime) > 0 {
 		log.Printf("%s. 'inTime:%s > baseTime:%s'", ErrTimePast, r.inTime, baseTime)
@@ -106,12 +106,12 @@ func (r *DBpool) Put(record Record, pos *Position, gz bool) error {
 	var err error
 	db := r.isOpen(baseTime)
 	if db == nil {
-		if db, err = r.CreateDB(baseTime, pos); err != nil {
+		if db, err = r.CreateDB(baseTime, &row.Pos); err != nil {
 			log.Printf("r.createDB(%s) err:%s", baseTime, err)
 			return err
 		}
 	}
-	if err = db.put(record, pos, gz); err != nil {
+	if err = db.Put(row); err != nil {
 		return err
 	}
 	return nil

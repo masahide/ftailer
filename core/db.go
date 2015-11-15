@@ -25,10 +25,6 @@ type DB struct {
 	fix bool
 }
 
-func (d *DB) put(record Record, pos *Position, gz bool) error {
-	return record.Put(d.FtailDB, pos, true)
-}
-
 func (d *DB) GetPositon() (pos Position, err error) {
 	if d.PosError != nil {
 		return Position{}, d.PosError

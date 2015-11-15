@@ -7,7 +7,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/boltdb/bolt"
 	"github.com/masahide/ftailer/core"
 )
 
@@ -47,27 +46,15 @@ func main() {
 			return
 		}
 		log.Printf("open db: %v -------------", f)
-		readDb(os.Stdout, db)
+		if err := readDb(os.Stdout, db); err != nil {
+			log.Printf("readDB err:%s", err)
+		}
 		db.Close(false)
 
 	}
 }
 
 func readDb(w io.Writer, db *core.DB) error {
-	return db.View(func(tx *bolt.Tx) error {
-		c := core.Cursor(tx)
-		for k, v := c.First(); k != nil; k, v = c.Next() {
-			r, err := core.ReadRecord(k, v)
-			if err != nil {
-				return err
-			}
-			_, err = io.Copy(w, r)
-			if err != nil {
-				r.Close()
-				return err
-			}
-			r.Close()
-		}
-		return nil
-	})
+	_, err := db.ReadAll(w)
+	return err
 }
