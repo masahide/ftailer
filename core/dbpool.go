@@ -228,9 +228,3 @@ func (r *DBpool) recPositon() (*Position, error) {
 	}
 	return &p, err
 }
-
-/*
-func (r *DBpool) makeFilePath(t time.Time) string {
-	return MakeFilePath(r.Path, r.Name, t)
-}
-*/
