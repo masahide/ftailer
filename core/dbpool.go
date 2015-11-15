@@ -74,6 +74,9 @@ func (r *DBpool) CreateDB(t time.Time, pos *Position) (*DB, error) {
 	if err := db.createDB(recExt, pos); err != nil {
 		return nil, err
 	}
+	if err := db.Put(Row{Time: t, Pos: *pos}); err != nil {
+		return nil, err
+	}
 	//log.Printf("DB was created.: %s:%v", r.Name, t) // TODO: test
 	r.dbs[t] = db
 	r.inTime = t

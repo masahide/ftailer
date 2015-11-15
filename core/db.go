@@ -57,6 +57,7 @@ func (db *DB) Open(ext string) error {
 	db.FtailDB, err = FtailDBOpen(db.RealFilePath, 0644, nil)
 	if err != nil {
 		db.FtailDB = nil
+		return err
 	}
 	log.Printf("DB was opened.  %s", db.RealFilePath)
 	return err
@@ -102,29 +103,6 @@ func (db *DB) Delete(ext string) error {
 	log.Printf("save mv %s -> %s", extFilePath, brokenFilePath)
 	return os.Rename(extFilePath, brokenFilePath)
 }
-
-/*
-func makeFilePath(filePath, fileName string, t time.Time) string {
-	return path.Join(filePath, fileName, t.Format("20060102"))
-}
-*/
-
-/*
-func makeDBFileName(t time.Time) string {
-	return t.Format("150405")
-}
-*/
-
-/*
-func (db *DB) makeFilePath() string {
-	return path.Join(db.Path, db.Name, db.Time.Format("20060102"))
-	//	return makeFilePath(db.Path, db.Name, db.Time)
-}
-func (db *DB) makeFileName() string {
-	return db.Time.Format("150405")
-	//return makeDBFileName(db.Time)
-}
-*/
 
 func (db *DB) MakeFilefullPath(ext string) string {
 	return path.Join(db.Path, db.Name, db.Time.Format("20060102"), db.Time.Format("150405")) + ext
