@@ -10,11 +10,11 @@ const (
 )
 
 type Position struct {
-	Name       string
-	CreateAt   time.Time
-	Offset     int64
-	HeadHash   string
-	HashLength int64
+	Name       string    `json:"n,omitempty"`
+	CreateAt   time.Time `json:"ct,omitempty"`
+	Offset     int64     `json:"o,omitempty"`
+	HeadHash   string    `json:"h,omitempty"`
+	HashLength int64     `json:"hl,omitempty"`
 }
 
 func (p Position) String() string {
