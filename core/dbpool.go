@@ -74,7 +74,7 @@ func (r *DBpool) CreateDB(t time.Time, pos *Position) (*DB, error) {
 	if err := db.createDB(recExt, pos); err != nil {
 		return nil, err
 	}
-	if err := db.Put(Row{Time: t, Pos: *pos}); err != nil {
+	if err := db.Put(Row{Time: t, Pos: pos}); err != nil {
 		return nil, err
 	}
 	//log.Printf("DB was created.: %s:%v", r.Name, t) // TODO: test
@@ -109,7 +109,7 @@ func (r *DBpool) Put(row Row) error {
 	var err error
 	db := r.isOpen(baseTime)
 	if db == nil {
-		if db, err = r.CreateDB(baseTime, &row.Pos); err != nil {
+		if db, err = r.CreateDB(baseTime, row.Pos); err != nil {
 			log.Printf("r.createDB(%s) err:%s", baseTime, err)
 			return err
 		}
