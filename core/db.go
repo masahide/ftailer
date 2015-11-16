@@ -127,7 +127,7 @@ type Row struct {
 	Time time.Time `json:"t"`
 	Pos  *Position `json:"p,omitempty"`
 	Bin  []byte    `json:"b,omitempty"`
-	Text string    `json:"t,omitempty"`
+	Text string    `json:"s,omitempty"`
 }
 
 type FtailDBOptions struct {

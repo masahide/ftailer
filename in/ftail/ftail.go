@@ -255,14 +255,13 @@ func (nopCloser) Close() error { return nil }
 
 // NopCloser returns a ReadCloser with a no-op Close method wrapping
 // the provided Reader r.
-func NopCloser(r io.Writer) io.WriteCloser {
-	return nopCloser{r}
+func NopCloser(w io.Writer) io.WriteCloser {
+	return nopCloser{w}
 }
 func (f *Ftail) Flush() error {
 	if f.buf.Len() <= 0 {
 		return nil
 	}
-	f.Writer.Close()
 	err := f.rec.Put(core.Row{Time: f.lastTime, Pos: f.Pos, Text: f.buf.String()})
 	f.buf.Reset()
 	if err != nil {
