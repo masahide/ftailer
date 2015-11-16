@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"io"
 	"log"
 	"os"
 	"time"
@@ -46,15 +45,10 @@ func main() {
 			return
 		}
 		log.Printf("open db: %v -------------", f)
-		if err := readDb(os.Stdout, db); err != nil {
+		if _, _, err := db.ReadAll(os.Stdout); err != nil {
 			log.Printf("readDB err:%s", err)
 		}
 		db.Close(false)
 
 	}
-}
-
-func readDb(w io.Writer, db *core.DB) error {
-	_, err := db.ReadAll(w)
-	return err
 }

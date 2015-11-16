@@ -162,7 +162,8 @@ func FtailDBOpen(path string, mode os.FileMode, options *FtailDBOptions) (*Ftail
 }
 
 func (db *FtailDB) lastPostion() (*Position, error) {
-	return db.ReadAll(ioutil.Discard)
+	_, pos, err := db.ReadAll(ioutil.Discard)
+	return pos, err
 }
 
 func (db *FtailDB) Close() error {
@@ -182,9 +183,10 @@ func (db *FtailDB) Put(row Row) error {
 	return err
 }
 
-func (db *FtailDB) ReadAll(w io.Writer) (*Position, error) {
+func (db *FtailDB) ReadAll(w io.Writer) (int64, *Position, error) {
 	var p *Position
 	line := 0
+	size := int64(0)
 	dec := json.NewDecoder(db.file)
 	for {
 		var row Row
@@ -192,24 +194,28 @@ func (db *FtailDB) ReadAll(w io.Writer) (*Position, error) {
 		if err := dec.Decode(&row); err == io.EOF {
 			break
 		} else if err != nil {
-			return nil, &InvalidFtailDBError{Line: line, File: db.path, S: err.Error()}
+			return size, nil, &InvalidFtailDBError{Line: line, File: db.path, S: err.Error()}
 		}
+		var sz int64
+		var err error
 		if row.Bin != nil {
 			r, err := zlib.NewReader(bytes.NewReader(row.Bin))
 			if err != nil {
-				return nil, &InvalidFtailDBError{Line: line, File: db.path, S: err.Error()}
+				return size, nil, &InvalidFtailDBError{Line: line, File: db.path, S: err.Error()}
 			}
-			if _, err := io.Copy(w, r); err != nil {
-				return nil, &InvalidFtailDBError{Line: line, File: db.path, S: err.Error()}
+			if sz, err = io.Copy(w, r); err != nil {
+				return size, nil, &InvalidFtailDBError{Line: line, File: db.path, S: err.Error()}
 			}
 		} else {
-			if _, err := io.WriteString(w, row.Text); err != nil {
-				return nil, &InvalidFtailDBError{Line: line, File: db.path, S: err.Error()}
+			if _, err = io.WriteString(w, row.Text); err != nil {
+				return size, nil, &InvalidFtailDBError{Line: line, File: db.path, S: err.Error()}
 			}
+			sz = int64(len(row.Text))
 		}
+		size += sz
 		p = row.Pos
 	}
-	return p, nil
+	return size, p, nil
 }
 
 type InvalidFtailDBError struct {
