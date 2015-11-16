@@ -139,7 +139,7 @@ var DefaultOptions = &FtailDBOptions{
 }
 
 func FtailDBOpen(path string, mode os.FileMode, options *FtailDBOptions) (*FtailDB, error) {
-	db := &FtailDB{opened: true}
+	db := &FtailDB{path: path, opened: true}
 	if options == nil {
 		options = DefaultOptions
 	}
