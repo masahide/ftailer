@@ -264,20 +264,22 @@ func (f *Ftail) Flush() error {
 		return nil
 	}
 	var b bytes.Buffer
-	w := zlib.NewWriter(&b)
+	w, err := zlib.NewWriterLevel(&b, zlib.BestCompression)
+	if err != nil {
+		return err
+	}
+	defer w.Close()
 	if _, err := io.Copy(w, &f.buf); err != nil {
 		return err
 	}
-	w.Close()
 	row := core.Row{Time: f.lastTime, Pos: f.Pos}
 	if b.Len() < f.buf.Len() {
 		row.Bin = b.Bytes()
 	} else {
 		row.Text = f.buf.String()
 	}
-	err := f.rec.Put(row)
-	f.buf.Reset()
-	if err != nil {
+	defer f.buf.Reset()
+	if err = f.rec.Put(row); err != nil {
 		log.Printf("Flush %s err:%s", f.Pos.Name, err)
 	}
 	return err
