@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"compress/zlib"
+	"encoding/gob"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -115,6 +116,7 @@ func (db *DB) MakeFilefullPath(ext string) string {
 }
 
 type FtailDB struct {
+	gob      bool
 	path     string
 	readOnly bool
 	opened   bool
@@ -132,10 +134,12 @@ type Row struct {
 
 type FtailDBOptions struct {
 	ReadOnly bool
+	Gob      bool
 }
 
 var DefaultOptions = &FtailDBOptions{
 	ReadOnly: false,
+	Gob:      true,
 }
 
 func FtailDBOpen(path string, mode os.FileMode, options *FtailDBOptions) (*FtailDB, error) {
@@ -147,6 +151,9 @@ func FtailDBOpen(path string, mode os.FileMode, options *FtailDBOptions) (*Ftail
 	if options.ReadOnly {
 		flag = os.O_RDONLY
 		db.readOnly = true
+	}
+	if options.Gob {
+		db.gob = true
 	}
 	var err error
 	if db.file, err = os.OpenFile(db.path, flag|os.O_CREATE, mode); err != nil {
@@ -175,19 +182,39 @@ func (db *FtailDB) Close() error {
 }
 
 func (db *FtailDB) Put(row Row) error {
-	b, err := json.Marshal(row)
-	if err != nil {
-		return err
+	data := []byte{}
+	if db.gob {
+		var b bytes.Buffer
+		enc := gob.NewEncoder(&b)
+		if err := enc.Encode(row); err != nil {
+			return err
+		}
+		data = b.Bytes()
+	} else {
+		b, err := json.Marshal(row)
+		if err != nil {
+			return err
+		}
+		data = append(b, '\n')
 	}
-	_, err = db.file.Write(append(b, '\n'))
+	_, err := db.file.Write(data)
 	return err
+}
+
+type Decoder interface {
+	Decode(e interface{}) error
 }
 
 func (db *FtailDB) ReadAll(w io.Writer) (int64, *Position, error) {
 	var p *Position
 	line := 0
 	size := int64(0)
-	dec := json.NewDecoder(db.file)
+	var dec Decoder
+	if db.gob {
+		dec = gob.NewDecoder(db.file)
+	} else {
+		dec = json.NewDecoder(db.file)
+	}
 	for {
 		var row Row
 		line++

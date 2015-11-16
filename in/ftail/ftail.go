@@ -2,6 +2,7 @@ package ftail
 
 import (
 	"bytes"
+	"compress/zlib"
 	"hash"
 	"hash/fnv"
 	"io"
@@ -262,7 +263,19 @@ func (f *Ftail) Flush() error {
 	if f.buf.Len() <= 0 {
 		return nil
 	}
-	err := f.rec.Put(core.Row{Time: f.lastTime, Pos: f.Pos, Text: f.buf.String()})
+	var b bytes.Buffer
+	w := zlib.NewWriter(&b)
+	if _, err := io.Copy(w, &f.buf); err != nil {
+		return err
+	}
+	w.Close()
+	row := core.Row{Time: f.lastTime, Pos: f.Pos}
+	if b.Len() < f.buf.Len() {
+		row.Bin = b.Bytes()
+	} else {
+		row.Text = f.buf.String()
+	}
+	err := f.rec.Put(row)
 	f.buf.Reset()
 	if err != nil {
 		log.Printf("Flush %s err:%s", f.Pos.Name, err)
