@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"compress/zlib"
+	"encoding/binary"
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
@@ -252,3 +253,51 @@ type InvalidFtailDBError struct {
 }
 
 func (e *InvalidFtailDBError) Error() string { return fmt.Sprintf("%s:%d: %v", e.File, e.Line, e.S) }
+
+/*
+type Row struct {
+	Time time.Time `json:"t"`
+	Pos  *Position `json:"p,omitempty"`
+	Bin  []byte    `json:"b,omitempty"`
+	Text string    `json:"s,omitempty"`
+}
+type Position struct {
+	Name       string    `json:"n,omitempty"`
+	CreateAt   time.Time `json:"ct,omitempty"`
+	Offset     int64     `json:"o,omitempty"`
+	HashLength int64     `json:"hl,omitempty"`
+	HeadHash   string    `json:"h,omitempty"`
+}
+*/
+func EncodeRow(r Row) ([]byte, error) {
+	buf := &bytes.Buffer{}
+	var data = []interface{}{
+		r.Time.UnixNano(),
+		r.Pos.CreateAt.UnixNano(),
+		r.Pos.Offset,
+		int32(r.Pos.HashLength),
+		int32(len(r.Bin)),
+		int32(len(r.Text)),
+		int16(len(r.Pos.Name)),
+		int16(len(r.Pos.HeadHash)),
+	}
+	for _, v := range data {
+		err := binary.Write(buf, binary.LittleEndian, v)
+		if err != nil {
+			return nil, fmt.Errorf("binary.Write failed:", err)
+		}
+	}
+	var dataStream = [][]byte{
+		r.Bin,
+		[]byte(r.Text),
+		[]byte(r.Pos.Name),
+		[]byte(r.Pos.HeadHash),
+	}
+	for _, v := range dataStream {
+		_, err := buf.Write(v)
+		if err != nil {
+			return nil, fmt.Errorf("binary.Write failed:", err)
+		}
+	}
+	return buf.Bytes(), nil
+}
