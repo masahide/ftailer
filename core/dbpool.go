@@ -33,7 +33,7 @@ func (r *DBpool) open(t time.Time) (*DB, Position, error) {
 		return db, p, nil
 	}
 	db = &DB{Name: r.Name, Path: r.Path, Time: t}
-	if err = db.Open(recExt); err != nil {
+	if err = db.Open(recExt, nil); err != nil {
 		if serr, ok := err.(*InvalidFtailDBError); ok {
 			db.Close(false)
 			db.Delete(recExt)
@@ -196,7 +196,7 @@ func searchFixedFile(dbpath, name string) (pos *Position, err error) {
 	}
 	f := dbfiles[len(dbfiles)-1]
 	db.Time = f.Time
-	if err = db.Open(FixExt); err != nil {
+	if err = db.Open(FixExt, nil); err != nil {
 		log.Printf("not found db: %s", f.Path)
 		return
 	}
