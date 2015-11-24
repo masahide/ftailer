@@ -55,5 +55,8 @@ func GetPositon(db *FtailDB) (Position, error) {
 	if db.PosError != nil {
 		return p, db.PosError
 	}
+	if db.Pos == nil {
+		return Position{}, nil
+	}
 	return *db.Pos, nil
 }

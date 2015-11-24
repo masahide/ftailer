@@ -16,9 +16,14 @@ type Config struct {
 }
 
 var config = Config{
-	BufDir: "testbuf",
-	Name:   "test.log",
+	BufDir: "",
+	Name:   "",
 	Period: 1 * time.Minute,
+}
+
+var Options = &core.FtailDBOptions{
+	ReadOnly: true,
+	Gob:      true,
 }
 
 func main() {
@@ -29,26 +34,39 @@ func main() {
 
 	db := &core.DB{Path: config.BufDir, Name: config.Name}
 	// fixed fileを検索
-	dbfiles, err := core.FixGlob(db)
-	if err != nil {
-		log.Printf("find err:%s", err)
-		return
-	}
-	if len(dbfiles) == 0 {
-		log.Printf("not such file :%s", config.BufDir)
-		return
-	}
-	for _, f := range dbfiles {
-		db.Time = f.Time
-		if err = db.Open(core.FixExt); err != nil {
-			log.Printf("not found db: %s", f.Path)
+	if config.BufDir == "" && config.Name == "" && flag.NArg() >= 1 {
+		f := flag.Args()[0]
+		db, err := core.FtailDBOpen(f, 0660, Options)
+		if err != nil {
+			log.Printf("err:%s", err)
 			return
 		}
 		log.Printf("open db: %v -------------", f)
 		if _, _, err := db.ReadAll(os.Stdout); err != nil {
 			log.Printf("readDB err:%s", err)
 		}
-		db.Close(false)
+	} else {
+		dbfiles, err := core.FixGlob(db)
+		if err != nil {
+			log.Printf("find err:%s", err)
+			return
+		}
+		if len(dbfiles) == 0 {
+			log.Printf("not such file :%s", config.BufDir)
+			return
+		}
+		for _, f := range dbfiles {
+			db.Time = f.Time
+			if err = db.Open(core.FixExt); err != nil {
+				log.Printf("not found db: %s", f.Path)
+				return
+			}
+			log.Printf("open db: %v -------------", f)
+			if _, _, err := db.ReadAll(os.Stdout); err != nil {
+				log.Printf("readDB err:%s", err)
+			}
+			db.Close(false)
 
+		}
 	}
 }

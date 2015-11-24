@@ -32,11 +32,8 @@ type DB struct {
 	fix bool
 }
 
-func (d *DB) GetPositon() (pos Position, err error) {
-	if d.PosError != nil {
-		return Position{}, d.PosError
-	}
-	return *d.Pos, nil
+func (db *DB) GetPositon() (pos Position, err error) {
+	return GetPositon(db.FtailDB)
 }
 
 func (db *DB) createDB(ext string, pos *Position) error {
