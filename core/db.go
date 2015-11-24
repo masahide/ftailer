@@ -25,7 +25,6 @@ const (
 )
 
 type DB struct {
-	WorkLimit    chan bool
 	RealFilePath string
 	Path         string
 	Name         string
