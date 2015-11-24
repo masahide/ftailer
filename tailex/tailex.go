@@ -45,6 +45,7 @@ type TailEx struct {
 	Lines     chan *tail.Line
 	TimeSlice time.Time // 現在のファイルの time slice
 	FilePath  string
+	WorkLimit chan bool
 	//FileInfo  chan FileInfo
 	old bool
 
@@ -60,9 +61,10 @@ func Truncate(t time.Time, d time.Duration) time.Time {
 	return t.Truncate(d)
 }
 
-func TailFile(ctx context.Context, config Config) *TailEx {
+func TailFile(ctx context.Context, config Config, w chan bool) *TailEx {
 	c := &TailEx{
 		Config:    config,
+		WorkLimit: w,
 		TimeSlice: Truncate(config.Time, config.RotatePeriod),
 		Lines:     make(chan *tail.Line, config.LinesChanSize),
 		//FileInfo:  make(chan FileInfo),
@@ -109,6 +111,8 @@ func (c *TailEx) tailFileSyncLoop(ctx context.Context) {
 
 // Glob検索で見つかるまで 1*time.Secondでpolling
 func (c *TailEx) GlobSearchLoop(ctx context.Context, pathFmt string) (string, error) {
+	c.WorkLimit <- true
+	defer func() { <-c.WorkLimit }()
 	firstFlag := true
 	for {
 		globPath := Time2Path(pathFmt, c.TimeSlice)
@@ -154,7 +158,7 @@ func (c *TailEx) tailFile(ctx context.Context) error {
 		}
 	}
 	log.Printf("Start tail.TailFile(%s) location:%# v", c.FilePath, c.Location) //TODO: test
-	t, err := tail.TailFile(c.FilePath, c.Config.Config)
+	t, err := tail.TailFile(c.FilePath, c.Config.Config, c.WorkLimit)
 	if err != nil {
 		return err
 	}

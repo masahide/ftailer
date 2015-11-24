@@ -92,7 +92,8 @@ func (f *Ftail) position(c Config) (pos *core.Position, err error) {
 	return
 }
 
-func Start(ctx context.Context, c Config) error {
+func Start(ctx context.Context, c Config, w chan bool) error {
+	w <- true
 	f := &Ftail{
 		Config:   c,
 		headHash: fnv.New64(),
@@ -144,7 +145,7 @@ func Start(ctx context.Context, c Config) error {
 			f.Location = &tail.SeekInfo{Offset: f.Pos.Offset}
 		}
 	}
-	t := tailex.TailFile(ctx, f.Config.Config)
+	t := tailex.TailFile(ctx, f.Config.Config, w)
 	//var buf bytes.Buffer
 	f.buf = bytes.Buffer{}
 	/*
@@ -153,6 +154,7 @@ func Start(ctx context.Context, c Config) error {
 			log.Fatalln("NewZlibWriter err:", err)
 		}
 	*/
+	<-w
 	f.Writer = NopCloser(&f.buf)
 	defer f.Flush()
 
@@ -164,7 +166,7 @@ func Start(ctx context.Context, c Config) error {
 			if !ok {
 				return err
 			}
-			err := f.lineNotifyAction(ctx, line)
+			err := f.lineNotifyAction(ctx, line, w)
 			if err != nil {
 				return err
 			}
@@ -175,14 +177,15 @@ func Start(ctx context.Context, c Config) error {
 }
 
 // lineのNotifyType別に処理を分岐
-func (f *Ftail) lineNotifyAction(ctx context.Context, line *tail.Line) error {
+func (f *Ftail) lineNotifyAction(ctx context.Context, line *tail.Line, w chan bool) error {
 	var err error
+
+	if line.NotifyType == tail.NewLineNotify { // 新しいライン
+		return f.Write(line)
+	}
+	w <- true
+	defer func() { <-w }()
 	switch line.NotifyType {
-	case tail.NewLineNotify: // 新しいライン
-		err = f.Write(line)
-		if err != nil {
-			return err
-		}
 	case tail.TickerNotify, tailex.GlobLoopNotify: // 定期flush処理
 		if err := f.Flush(); err != nil {
 			return err
