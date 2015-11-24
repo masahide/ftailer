@@ -162,7 +162,14 @@ func FtailDBOpen(path string, mode os.FileMode, options *FtailDBOptions, pos *Po
 	if db.Pos, db.PosError = db.readHeader(); db.PosError != nil {
 		return nil, db.PosError
 	}
-	if db.Pos == nil {
+	if db.Pos == nil && options.ReadOnly {
+		return nil, fmt.Errorf("Unable to get the position. file:%s", path)
+	}
+	if db.Pos == nil && !options.ReadOnly {
+		db.Pos = pos
+		if pos == nil {
+			return nil, fmt.Errorf("new file: pos is %v, file:%s", pos, path)
+		}
 		if err := db.writeHeader(pos); err != nil {
 			return nil, err
 		}
