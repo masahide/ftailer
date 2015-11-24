@@ -253,7 +253,7 @@ type Decoder interface {
 }
 
 func (db *FtailDB) ReadAll(w io.Writer) (int64, *Position, error) {
-	var p *Position
+	var p = db.Pos
 	var err error
 	line := 0
 	size := int64(0)
