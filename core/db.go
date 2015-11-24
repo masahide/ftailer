@@ -266,20 +266,19 @@ func (db *FtailDB) ReadAll(w io.Writer) (int64, *Position, error) {
 		line++
 		if db.bin {
 			row, err = decodeRow(db.file)
-			if err != nil {
-				return size, nil, err
+			if err == io.EOF {
+				break
+			} else if err != nil {
+				return size, nil, &InvalidFtailDBError{Line: line, File: db.path, S: err.Error()}
 			}
-			row.Pos = &Position{
-				Name:     db.Pos.Name,
-				CreateAt: db.Pos.CreateAt,
-			}
+			row.Pos = &Position{Name: db.Pos.Name, CreateAt: db.Pos.CreateAt}
 		} else {
 			err = dec.Decode(row)
-		}
-		if err == io.EOF {
-			break
-		} else if err != nil {
-			return size, nil, &InvalidFtailDBError{Line: line, File: db.path, S: err.Error()}
+			if err == io.EOF {
+				break
+			} else if err != nil {
+				return size, nil, &InvalidFtailDBError{Line: line, File: db.path, S: err.Error()}
+			}
 		}
 		var sz int64
 		var err error
