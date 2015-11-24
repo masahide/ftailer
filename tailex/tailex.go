@@ -111,12 +111,12 @@ func (c *TailEx) tailFileSyncLoop(ctx context.Context) {
 
 // Glob検索で見つかるまで 1*time.Secondでpolling
 func (c *TailEx) GlobSearchLoop(ctx context.Context, pathFmt string) (string, error) {
-	c.WorkLimit <- true
-	defer func() { <-c.WorkLimit }()
 	firstFlag := true
 	for {
 		globPath := Time2Path(pathFmt, c.TimeSlice)
+		c.WorkLimit <- true
 		s, err := GlobSearch(globPath)
+		<-c.WorkLimit
 		if err == nil {
 			return s, nil // 見つかった
 		} else if err != ErrNoSuchFile {

@@ -255,7 +255,7 @@ func (db *FtailDB) ReadAll(w io.Writer) (int64, *Position, error) {
 		dec = json.NewDecoder(db.file)
 	}
 	for {
-		row := &Row{}
+		row := &Row{Pos: &Position{}}
 		line++
 		if db.bin {
 			row, err = decodeRow(db.file)
