@@ -25,6 +25,7 @@ const (
 )
 
 type DB struct {
+	WorkLimit    chan bool
 	RealFilePath string
 	Path         string
 	Name         string
@@ -60,7 +61,7 @@ func (db *DB) GetPositon() (pos Position, err error) {
 	return GetPositon(db.FtailDB)
 }
 
-func (db *DB) createDB(ext string, pos *Position) error {
+func (db *DB) Create(ext string, pos *Position) error {
 	if db.FtailDB != nil {
 		return nil
 	}
@@ -227,7 +228,7 @@ func (db *FtailDB) Put(row Row) error {
 	var err error
 	data := []byte{}
 	if db.bin {
-		if data, err = EncodeRow(row); err != nil {
+		if data, err = encodeRow(row); err != nil {
 			return err
 		}
 	} else {
@@ -258,7 +259,7 @@ func (db *FtailDB) ReadAll(w io.Writer) (int64, *Position, error) {
 		row := &Row{}
 		line++
 		if db.bin {
-			row, err = DecodeRow(db.file)
+			row, err = decodeRow(db.file)
 			row.Pos.Name = db.Pos.Name
 			row.Pos.CreateAt = db.Pos.CreateAt
 		} else {
@@ -315,7 +316,7 @@ type Position struct {
 }
 */
 
-func EncodeRow(r Row) ([]byte, error) {
+func encodeRow(r Row) ([]byte, error) {
 	var data = []interface{}{
 		r.Time.UnixNano(),
 		r.Pos.Offset,
@@ -353,7 +354,7 @@ func EncodeRow(r Row) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func DecodeRow(f io.Reader) (*Row, error) {
+func decodeRow(f io.Reader) (*Row, error) {
 	r := Row{Pos: &Position{}}
 	var t int64
 	var LenBin, LenText int32
