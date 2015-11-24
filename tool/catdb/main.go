@@ -23,7 +23,7 @@ var config = Config{
 
 var Options = &core.FtailDBOptions{
 	ReadOnly: true,
-	Gob:      true,
+	Bin:      true,
 }
 
 func main() {
@@ -36,7 +36,7 @@ func main() {
 	// fixed fileを検索
 	if config.BufDir == "" && config.Name == "" && flag.NArg() >= 1 {
 		f := flag.Args()[0]
-		db, err := core.FtailDBOpen(f, 0660, Options)
+		db, err := core.FtailDBOpen(f, 0660, Options, nil)
 		if err != nil {
 			log.Printf("err:%s", err)
 			return
@@ -57,7 +57,7 @@ func main() {
 		}
 		for _, f := range dbfiles {
 			db.Time = f.Time
-			if err = db.Open(core.FixExt); err != nil {
+			if err = db.Open(core.FixExt, nil); err != nil {
 				log.Printf("not found db: %s", f.Path)
 				return
 			}
