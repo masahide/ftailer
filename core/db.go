@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"compress/zlib"
 	"encoding/binary"
-	"encoding/gob"
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
@@ -162,10 +161,13 @@ func FtailDBOpen(path string, mode os.FileMode, options *FtailDBOptions, pos *Po
 	if db.Pos, db.PosError = db.readHeader(); db.PosError != nil {
 		return nil, db.PosError
 	}
-	if db.Pos == nil && options.ReadOnly {
-		return nil, fmt.Errorf("Unable to get the position. file:%s", path)
+	if db.readOnly {
+		if db.Pos == nil {
+			return nil, fmt.Errorf("Unable to get the position. file:%s", path)
+		}
+		return db, nil
 	}
-	if db.Pos == nil && !options.ReadOnly {
+	if db.Pos == nil {
 		db.Pos = pos
 		if pos == nil {
 			return nil, fmt.Errorf("new file: pos is %v, file:%s", pos, path)
@@ -182,8 +184,12 @@ func FtailDBOpen(path string, mode os.FileMode, options *FtailDBOptions, pos *Po
 func (db *FtailDB) writeHeader(pos *Position) error {
 	var err error
 	if db.bin {
-		enc := gob.NewEncoder(db.file)
-		err = enc.Encode(pos)
+		data, err := encodeRow(Row{Pos: pos})
+		if err != nil {
+			return err
+		}
+		_, err = db.file.Write(data)
+		return err
 	} else {
 		enc := json.NewEncoder(db.file)
 		err = enc.Encode(pos)
@@ -193,12 +199,11 @@ func (db *FtailDB) writeHeader(pos *Position) error {
 func (db *FtailDB) readHeader() (*Position, error) {
 	var pos Position
 	if db.bin {
-		dec := gob.NewDecoder(db.file)
-		if err := dec.Decode(&pos); err == io.EOF {
-			return nil, nil
-		} else if err != nil {
+		row, err := decodeRow(db.file)
+		if err != nil {
 			return nil, err
 		}
+		return row.Pos, nil
 	} else {
 		dec := json.NewDecoder(db.file)
 		if err := dec.Decode(&pos); err == io.EOF {
@@ -231,6 +236,8 @@ func (db *FtailDB) Close() error {
 }
 
 func (db *FtailDB) Put(row Row) error {
+	pos := &Position{Offset: row.Pos.Offset, HashLength: row.Pos.HashLength, HeadHash: row.Pos.HeadHash}
+	row.Pos = pos
 	var err error
 	data := []byte{}
 	if db.bin {
@@ -329,11 +336,13 @@ type Position struct {
 func encodeRow(r Row) ([]byte, error) {
 	var data = []interface{}{
 		r.Time.UnixNano(),
+		r.Pos.CreateAt.UnixNano(),
 		r.Pos.Offset,
 		int32(len(r.Bin)),
 		int32(len(r.Text)),
 		int16(r.Pos.HashLength),
 		int16(len(r.Pos.HeadHash)),
+		int16(len(r.Pos.Name)),
 	}
 	buf := &bytes.Buffer{}
 	fnvWriter := fnv.New32a()
@@ -351,6 +360,7 @@ func encodeRow(r Row) ([]byte, error) {
 		r.Bin,
 		[]byte(r.Text),
 		[]byte(r.Pos.HeadHash),
+		[]byte(r.Pos.Name),
 	}
 	for _, v := range dataStream {
 		_, err := w.Write(v)
@@ -366,22 +376,34 @@ func encodeRow(r Row) ([]byte, error) {
 
 func decodeRow(f io.Reader) (*Row, error) {
 	r := Row{Pos: &Position{}}
-	var t int64
 	var LenBin, LenText int32
-	var hashLength, LenHeadHash int16
+	var hashLength, LenHeadHash, LenName int16
+	fnvWriter := fnv.New32a()
+	tee := io.TeeReader(f, fnvWriter)
+
+	var times = []*time.Time{
+		&r.Time,
+		&r.Pos.CreateAt,
+	}
+	for _, v := range times {
+		var t int64
+		err := binary.Read(tee, binary.LittleEndian, &t)
+		if err != nil {
+			return nil, fmt.Errorf("binary.Read failed:", err)
+		}
+		if t == (&time.Time{}).UnixNano() {
+			*v = time.Time{}
+		} else {
+			*v = time.Unix(0, t)
+		}
+	}
 	var data = []interface{}{
 		&r.Pos.Offset,
 		&LenBin,
 		&LenText,
 		&hashLength,
 		&LenHeadHash,
-	}
-	fnvWriter := fnv.New32a()
-	tee := io.TeeReader(f, fnvWriter)
-	if err := binary.Read(tee, binary.LittleEndian, &t); err == io.EOF {
-		return nil, err
-	} else {
-		return nil, fmt.Errorf("binary.Read failed:", err)
+		&LenName,
 	}
 	for _, v := range data {
 		err := binary.Read(tee, binary.LittleEndian, v)
@@ -397,12 +419,12 @@ func decodeRow(f io.Reader) (*Row, error) {
 	if checkSum != sum {
 		return nil, fmt.Errorf("checksum1 does not match. f:%x sum:%x", checkSum, sum)
 	}
-	r.Time = time.Unix(0, t)
 	r.Pos.HashLength = int64(hashLength)
 	r.Bin = make([]byte, LenBin)
 	Text := make([]byte, LenText)
 	HeadHash := make([]byte, LenHeadHash)
-	var dataStream = [][]byte{r.Bin, Text, HeadHash}
+	Name := make([]byte, LenName)
+	var dataStream = [][]byte{r.Bin, Text, HeadHash, Name}
 	for _, v := range dataStream {
 		if _, err := tee.Read(v); err != nil {
 			return nil, fmt.Errorf("tee.Read failed:", err)
@@ -417,5 +439,6 @@ func decodeRow(f io.Reader) (*Row, error) {
 	}
 	r.Text = string(Text)
 	r.Pos.HeadHash = string(HeadHash)
+	r.Pos.Name = string(Name)
 	return &r, nil
 }

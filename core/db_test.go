@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"testing"
 	"time"
 )
@@ -31,6 +32,27 @@ func TestDBMakeFilefullPath(t *testing.T) {
 		output := db.MakeFilefullPath("ext")
 		if output != e.output {
 			t.Errorf("makeFilePath(%q) => %q, want %q", e.input, output, e.output)
+		}
+	}
+}
+
+func TestEncodeRowDecodeRow(t *testing.T) {
+	testDatas := []Row{
+		{Pos: &Position{}},
+		{Time: time.Now(), Pos: &Position{Name: "hoge", CreateAt: time.Now()}},
+	}
+	for _, testData := range testDatas {
+		data, err := encodeRow(testData)
+		if err != nil {
+			t.Error(err)
+		}
+		buf := bytes.NewBuffer(data)
+		row, err := decodeRow(buf)
+		if err != nil {
+			t.Error(err)
+		}
+		if *row.Pos != *testData.Pos {
+			t.Errorf("row.Pos:(%v) != testData.Pos:(%v)", row.Pos, testData.Pos)
 		}
 	}
 }
