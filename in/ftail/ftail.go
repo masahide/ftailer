@@ -271,16 +271,18 @@ func (f *Ftail) Flush() error {
 	if err != nil {
 		return err
 	}
-	defer w.Close()
-	if _, err := io.Copy(w, &f.buf); err != nil {
+	row := core.Row{Time: f.lastTime, Pos: f.Pos}
+	row.Text = f.buf.String()
+	_, err = io.Copy(w, &f.buf)
+	w.Close()
+	if err != nil {
 		return err
 	}
-	row := core.Row{Time: f.lastTime, Pos: f.Pos}
 	if b.Len() < f.buf.Len() {
 		row.Bin = b.Bytes()
-	} else {
-		row.Text = f.buf.String()
+		row.Text = ""
 	}
+	//log.Printf("text:'%s',bin:'%x', buf.String:%s", row.Text, row.Bin, f.buf.String())
 	defer f.buf.Reset()
 	if err = f.rec.Put(row); err != nil {
 		log.Printf("Flush %s err:%s", f.Pos.Name, err)
