@@ -158,16 +158,8 @@ func FtailDBOpen(path string, mode os.FileMode, options *FtailDBOptions, pos *Po
 		_ = db.Close()
 		return nil, err
 	}
-	if db.Pos, db.PosError = db.readHeader(); db.PosError != nil {
-		return nil, db.PosError
-	}
-	if db.readOnly {
-		if db.Pos == nil {
-			return nil, fmt.Errorf("Unable to get the position. file:%s", path)
-		}
-		return db, nil
-	}
-	if db.Pos == nil {
+	db.Pos, db.PosError = db.readHeader()
+	if db.PosError == io.EOF {
 		db.Pos = pos
 		if pos == nil {
 			return nil, fmt.Errorf("new file: pos is %v, file:%s", pos, path)
@@ -175,6 +167,14 @@ func FtailDBOpen(path string, mode os.FileMode, options *FtailDBOptions, pos *Po
 		if err := db.writeHeader(pos); err != nil {
 			return nil, err
 		}
+	} else if db.PosError != nil {
+		return nil, db.PosError
+	}
+	if db.readOnly {
+		if db.Pos == nil {
+			return nil, fmt.Errorf("Unable to get the position. file:%s", path)
+		}
+		return db, nil
 	} else if db.Pos, db.PosError = db.lastPostion(*db.Pos); db.PosError != nil {
 		return nil, db.PosError
 	}
@@ -315,7 +315,9 @@ type InvalidFtailDBError struct {
 	S    string
 }
 
-func (e *InvalidFtailDBError) Error() string { return fmt.Sprintf("%s:%d: %v", e.File, e.Line, e.S) }
+func (e *InvalidFtailDBError) Error() string {
+	return fmt.Sprintf("Invalid FtailDB Error. file:%s count:%d: err:%v", e.File, e.Line, e.S)
+}
 
 /*
 type Row struct {
@@ -350,11 +352,11 @@ func encodeRow(r Row) ([]byte, error) {
 	for _, v := range data {
 		err := binary.Write(w, binary.LittleEndian, v)
 		if err != nil {
-			return nil, fmt.Errorf("binary.Write failed: %s", err)
+			return nil, fmt.Errorf("encodeRow binary.Write failed1: %s", err)
 		}
 	}
 	if err := binary.Write(w, binary.LittleEndian, fnvWriter.Sum32()); err != nil {
-		return nil, fmt.Errorf("binary.Write failed checkSum1: %s", err)
+		return nil, fmt.Errorf("encodeRow binary.Write failed checkSum1: %s", err)
 	}
 	var dataStream = [][]byte{
 		r.Bin,
@@ -365,11 +367,11 @@ func encodeRow(r Row) ([]byte, error) {
 	for _, v := range dataStream {
 		_, err := w.Write(v)
 		if err != nil {
-			return nil, fmt.Errorf("binary.Write failed: %s", err)
+			return nil, fmt.Errorf("encodeRow binary.Write failed2: %s", err)
 		}
 	}
 	if err := binary.Write(buf, binary.LittleEndian, fnvWriter.Sum32()); err != nil {
-		return nil, fmt.Errorf("binary.Write failed checkSum2: %s", err)
+		return nil, fmt.Errorf("encodeRow binary.Write failed checkSum2: %s", err)
 	}
 	return buf.Bytes(), nil
 }
@@ -388,8 +390,10 @@ func decodeRow(f io.Reader) (*Row, error) {
 	for _, v := range times {
 		var t int64
 		err := binary.Read(tee, binary.LittleEndian, &t)
-		if err != nil {
-			return nil, fmt.Errorf("binary.Read failed:", err)
+		if err == io.EOF {
+			return nil, err
+		} else if err != nil {
+			return nil, fmt.Errorf("decodeRow binary.Read failed1: %v", err)
 		}
 		if t == (&time.Time{}).UnixNano() {
 			*v = time.Time{}
@@ -407,17 +411,22 @@ func decodeRow(f io.Reader) (*Row, error) {
 	}
 	for _, v := range data {
 		err := binary.Read(tee, binary.LittleEndian, v)
-		if err != nil {
-			return nil, fmt.Errorf("binary.Read failed:", err)
+		if err == io.EOF {
+			return nil, err
+		} else if err != nil {
+			return nil, fmt.Errorf("decodeRow binary.Read failed2: %v", err)
 		}
 	}
 	sum := fnvWriter.Sum32()
 	var checkSum uint32
-	if err := binary.Read(tee, binary.LittleEndian, &checkSum); err != nil {
-		return nil, fmt.Errorf("binary.Read failed checkSum1: %s", err)
+	err := binary.Read(tee, binary.LittleEndian, &checkSum)
+	if err == io.EOF {
+		return nil, err
+	} else if err != nil {
+		return nil, fmt.Errorf("decodeRow binary.Read failed checkSum1: %s", err)
 	}
 	if checkSum != sum {
-		return nil, fmt.Errorf("checksum1 does not match. f:%x sum:%x", checkSum, sum)
+		return nil, fmt.Errorf("decodeRow checksum1 does not match. f:%x sum:%x", checkSum, sum)
 	}
 	r.Pos.HashLength = int64(hashLength)
 	r.Bin = make([]byte, LenBin)
@@ -426,19 +435,28 @@ func decodeRow(f io.Reader) (*Row, error) {
 	Name := make([]byte, LenName)
 	var dataStream = [][]byte{r.Bin, Text, HeadHash, Name}
 	for _, v := range dataStream {
-		if _, err := tee.Read(v); err != nil {
-			return nil, fmt.Errorf("tee.Read failed:", err)
+		_, err := tee.Read(v)
+		if err == io.EOF {
+			return nil, err
+		} else if err != nil {
+			return nil, fmt.Errorf("decodeRow tee.Read failed: %v", err)
 		}
 	}
 	sum = fnvWriter.Sum32()
-	if err := binary.Read(f, binary.LittleEndian, &checkSum); err != nil {
-		return nil, fmt.Errorf("binary.Read failed checkSum2: %s", err)
+	err = binary.Read(f, binary.LittleEndian, &checkSum)
+	if err == io.EOF {
+		return nil, err
+	} else if err != nil {
+		return nil, fmt.Errorf("decodeRow binary.Read failed checkSum2: %s", err)
 	}
 	if checkSum != sum {
-		return nil, fmt.Errorf("checksum2 does not match. f:%x sum:%x", checkSum, sum)
+		return nil, fmt.Errorf("decodeRow checksum2 does not match. f:%x sum:%x", checkSum, sum)
 	}
 	r.Text = string(Text)
 	r.Pos.HeadHash = string(HeadHash)
 	r.Pos.Name = string(Name)
+	if LenBin == 0 {
+		r.Bin = nil
+	}
 	return &r, nil
 }

@@ -110,7 +110,7 @@ func (r *DBpool) Put(row Row) error {
 	db := r.isOpen(baseTime)
 	if db == nil {
 		if db, err = r.CreateDB(baseTime, row.Pos); err != nil {
-			log.Printf("r.CreateDB(%s) err:%s", baseTime, err)
+			log.Printf("r.CreateDB(%v) err:%v", baseTime, err)
 			return err
 		}
 	}
