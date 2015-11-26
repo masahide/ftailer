@@ -85,8 +85,9 @@ func main() {
 	*/
 
 	wg.Add(1)
+	w := make(chan bool, 1)
 	go func() {
-		err := ftail.Start(ctx, testlogrotateConfig)
+		err := ftail.Start(ctx, testlogrotateConfig, w)
 		if err != nil {
 			log.Printf("ftail.Start err:%v", err)
 		}

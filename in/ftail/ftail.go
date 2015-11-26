@@ -35,8 +35,8 @@ type Ftail struct {
 	Pos       *core.Position
 	Config
 
-	buf bytes.Buffer
-	*zlib.Writer
+	buf      bytes.Buffer
+	Writer   io.WriteCloser
 	lastTime time.Time
 	headHash hash.Hash64
 	head     []byte
@@ -92,7 +92,8 @@ func (f *Ftail) position(c Config) (pos *core.Position, err error) {
 	return
 }
 
-func Start(ctx context.Context, c Config) error {
+func Start(ctx context.Context, c Config, w chan bool) error {
+	w <- true
 	f := &Ftail{
 		Config:   c,
 		headHash: fnv.New64(),
@@ -144,13 +145,17 @@ func Start(ctx context.Context, c Config) error {
 			f.Location = &tail.SeekInfo{Offset: f.Pos.Offset}
 		}
 	}
-	t := tailex.TailFile(ctx, f.Config.Config)
+	t := tailex.TailFile(ctx, f.Config.Config, w)
 	//var buf bytes.Buffer
 	f.buf = bytes.Buffer{}
-	f.Writer, err = zlib.NewWriterLevel(&f.buf, zlib.BestCompression)
-	if err != nil {
-		log.Fatalln("NewZlibWriter err:", err)
-	}
+	/*
+		f.Writer, err = zlib.NewWriterLevel(&f.buf, zlib.BestCompression)
+		if err != nil {
+			log.Fatalln("NewZlibWriter err:", err)
+		}
+	*/
+	<-w
+	f.Writer = NopCloser(&f.buf)
 	defer f.Flush()
 
 	for {
@@ -161,7 +166,7 @@ func Start(ctx context.Context, c Config) error {
 			if !ok {
 				return err
 			}
-			err := f.lineNotifyAction(ctx, line)
+			err := f.lineNotifyAction(ctx, line, w)
 			if err != nil {
 				return err
 			}
@@ -172,14 +177,15 @@ func Start(ctx context.Context, c Config) error {
 }
 
 // lineのNotifyType別に処理を分岐
-func (f *Ftail) lineNotifyAction(ctx context.Context, line *tail.Line) error {
+func (f *Ftail) lineNotifyAction(ctx context.Context, line *tail.Line, w chan bool) error {
 	var err error
+
+	if line.NotifyType == tail.NewLineNotify { // 新しいライン
+		return f.Write(line)
+	}
+	w <- true
+	defer func() { <-w }()
 	switch line.NotifyType {
-	case tail.NewLineNotify: // 新しいライン
-		err = f.Write(line)
-		if err != nil {
-			return err
-		}
 	case tail.TickerNotify, tailex.GlobLoopNotify: // 定期flush処理
 		if err := f.Flush(); err != nil {
 			return err
@@ -247,15 +253,38 @@ func (f *Ftail) Write(line *tail.Line) (err error) {
 	return err
 }
 
+type nopCloser struct{ io.Writer }
+
+func (nopCloser) Close() error { return nil }
+
+// NopCloser returns a ReadCloser with a no-op Close method wrapping
+// the provided Reader r.
+func NopCloser(w io.Writer) io.WriteCloser {
+	return nopCloser{w}
+}
 func (f *Ftail) Flush() error {
 	if f.buf.Len() <= 0 {
 		return nil
 	}
-	f.Writer.Close()
-	err := f.rec.Put(core.Record{Time: f.lastTime, Data: f.buf.Bytes()}, f.Pos)
-	f.buf.Reset()
-	f.Reset(&f.buf)
+	var b bytes.Buffer
+	w, err := zlib.NewWriterLevel(&b, zlib.BestCompression)
 	if err != nil {
+		return err
+	}
+	row := core.Row{Time: f.lastTime, Pos: f.Pos}
+	row.Text = f.buf.String()
+	_, err = io.Copy(w, &f.buf)
+	w.Close()
+	if err != nil {
+		return err
+	}
+	if b.Len() < f.buf.Len() {
+		row.Bin = b.Bytes()
+		row.Text = ""
+	}
+	//log.Printf("text:'%s',bin:'%x', buf.String:%s", row.Text, row.Bin, f.buf.String())
+	defer f.buf.Reset()
+	if err = f.rec.Put(row); err != nil {
 		log.Printf("Flush %s err:%s", f.Pos.Name, err)
 	}
 	return err

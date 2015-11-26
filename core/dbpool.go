@@ -33,16 +33,24 @@ func (r *DBpool) open(t time.Time) (*DB, Position, error) {
 		return db, p, nil
 	}
 	db = &DB{Name: r.Name, Path: r.Path, Time: t}
-	if err = db.Open(recExt); err != nil {
-		return nil, p, err
-	}
-	defer func() {
-		if r := recover(); r != nil {
+	if err = db.Open(recExt, nil); err != nil {
+		if serr, ok := err.(*InvalidFtailDBError); ok {
 			db.Close(false)
 			db.Delete(recExt)
-			log.Fatalf("Recovered in db.GetPositon : %v", r)
+			log.Fatalf("Recovered in DBpool.open : %s", serr)
+		} else {
+			return nil, p, err
 		}
-	}()
+	}
+	/*
+		defer func() {
+			if r := recover(); r != nil {
+				db.Close(false)
+				db.Delete(recExt)
+				log.Fatalf("Recovered in db.GetPositon : %v", r)
+			}
+		}()
+	*/
 	if p, err = db.GetPositon(); err != nil {
 		return nil, p, err
 	}
@@ -63,7 +71,10 @@ func (r *DBpool) CreateDB(t time.Time, pos *Position) (*DB, error) {
 		return db, nil
 	}
 	db = &DB{Name: r.Name, Path: r.Path, Time: t}
-	if err := db.createDB(recExt, pos); err != nil {
+	if err := db.Create(recExt, pos); err != nil {
+		return nil, err
+	}
+	if err := db.Put(Row{Time: t, Pos: pos}); err != nil {
 		return nil, err
 	}
 	//log.Printf("DB was created.: %s:%v", r.Name, t) // TODO: test
@@ -82,8 +93,8 @@ func (r *DBpool) isOpen(t time.Time) *DB {
 }
 
 // Put
-func (r *DBpool) Put(record Record, pos *Position) error {
-	baseTime := record.Time.Truncate(r.Period)
+func (r *DBpool) Put(row Row) error {
+	baseTime := row.Time.Truncate(r.Period)
 	//log.Printf("inTime:%s baseTime:%s", r.inTime, baseTime) //TODO: test
 	if r.inTime.Sub(baseTime) > 0 {
 		log.Printf("%s. 'inTime:%s > baseTime:%s'", ErrTimePast, r.inTime, baseTime)
@@ -98,12 +109,12 @@ func (r *DBpool) Put(record Record, pos *Position) error {
 	var err error
 	db := r.isOpen(baseTime)
 	if db == nil {
-		if db, err = r.CreateDB(baseTime, pos); err != nil {
-			log.Printf("r.createDB(%s) err:%s", baseTime, err)
+		if db, err = r.CreateDB(baseTime, row.Pos); err != nil {
+			log.Printf("r.CreateDB(%v) err:%v", baseTime, err)
 			return err
 		}
 	}
-	if err = db.put(record, pos); err != nil {
+	if err = db.Put(row); err != nil {
 		return err
 	}
 	return nil
@@ -185,7 +196,7 @@ func searchFixedFile(dbpath, name string) (pos *Position, err error) {
 	}
 	f := dbfiles[len(dbfiles)-1]
 	db.Time = f.Time
-	if err = db.Open(FixExt); err != nil {
+	if err = db.Open(FixExt, nil); err != nil {
 		log.Printf("not found db: %s", f.Path)
 		return
 	}
@@ -220,9 +231,3 @@ func (r *DBpool) recPositon() (*Position, error) {
 	}
 	return &p, err
 }
-
-/*
-func (r *DBpool) makeFilePath(t time.Time) string {
-	return MakeFilePath(r.Path, r.Name, t)
-}
-*/

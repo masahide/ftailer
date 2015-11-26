@@ -71,11 +71,12 @@ type Tail struct {
 	Lines    chan *Line
 	Config
 
-	file     *os.File
-	reader   *bufio.Reader
-	tracker  *watch.InotifyTracker
-	ticker   *time.Ticker
-	openTime time.Time
+	file      *os.File
+	reader    *bufio.Reader
+	tracker   *watch.InotifyTracker
+	ticker    *time.Ticker
+	openTime  time.Time
+	WorkLimit chan bool
 
 	watcher watch.FileWatcher
 	changes *watch.FileChanges
@@ -94,11 +95,12 @@ var (
 // via the `Tail.Lines` channel. To handle errors during tailing,
 // invoke the `Wait` or `Err` method after finishing reading from the
 // `Lines` channel.
-func TailFile(filename string, config Config) (*Tail, error) {
+func TailFile(filename string, config Config, w chan bool) (*Tail, error) {
 	t := &Tail{
-		Filename: filename,
-		Lines:    make(chan *Line),
-		Config:   config,
+		Filename:  filename,
+		Lines:     make(chan *Line),
+		Config:    config,
+		WorkLimit: w,
 	}
 
 	// when Logger was not specified in config, use default logger
@@ -193,6 +195,8 @@ func (tail *Tail) reopen(ctx context.Context) error {
 }
 
 func (tail *Tail) readLine() ([]byte, error) {
+	tail.WorkLimit <- true
+	defer func() { <-tail.WorkLimit }()
 	line, err := tail.reader.ReadBytes(byte('\n'))
 	if err != nil {
 		// Note ReadString "returns the data read before the error" in
