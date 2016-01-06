@@ -278,7 +278,8 @@ func (db *FtailDB) ReadAll(w io.Writer) (int64, *Position, error) {
 			} else if err != nil {
 				return size, nil, &InvalidFtailDBError{Line: line, File: db.path, S: err.Error()}
 			}
-			row.Pos = &Position{Name: db.Pos.Name, CreateAt: db.Pos.CreateAt}
+			row.Pos.Name = db.Pos.Name
+			row.Pos.CreateAt = db.Pos.CreateAt
 		} else {
 			err = dec.Decode(row)
 			if err == io.EOF {
