@@ -7,12 +7,12 @@ import (
 )
 
 type DBpool struct {
-	Path    string
-	Name    string
-	inTime  time.Time
-	outTime time.Time
-	Period  time.Duration // time.Minute
-	dbs     map[time.Time]*DB
+	Path   string
+	Name   string
+	inTime time.Time
+	//outTime time.Time
+	Period time.Duration // time.Minute
+	dbs    map[time.Time]*DB
 }
 
 var (
@@ -35,8 +35,12 @@ func (r *DBpool) open(t time.Time) (*DB, Position, error) {
 	db = &DB{Name: r.Name, Path: r.Path, Time: t}
 	if err = db.Open(recExt, nil); err != nil {
 		if serr, ok := err.(*InvalidFtailDBError); ok {
-			db.Close(false)
-			db.Delete(recExt)
+			if cerr := db.Close(false); cerr != nil {
+				return nil, p, cerr
+			}
+			if derr := db.Delete(recExt); derr != nil {
+				return nil, p, derr
+			}
 			log.Fatalf("Recovered in DBpool.open : %s", serr)
 		} else {
 			return nil, p, err

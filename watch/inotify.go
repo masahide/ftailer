@@ -59,7 +59,6 @@ func (fw *InotifyFileWatcher) BlockUntilExists(ctx context.Context) error {
 			return ctx.Err()
 		}
 	}
-	panic("unreachable")
 }
 
 func (fw *InotifyFileWatcher) ChangeEvents(ctx context.Context, fi os.FileInfo) *FileChanges {
@@ -69,64 +68,82 @@ func (fw *InotifyFileWatcher) ChangeEvents(ctx context.Context, fi os.FileInfo) 
 	if err != nil {
 		log.Fatalf("Error watching %v: %v", fw.Filename, err)
 	}
+	go fw.changeEventsWorker(ctx, changes)
+	return changes
+}
 
-	go func() {
-		defer fw.w.RemoveWatch(fw.Filename)
-		defer changes.Close()
-		var inCreate bool
-		var CreateTimer <-chan time.Time
-		fwFilename, err := filepath.Abs(fw.Filename)
-		if err != nil {
+func (fw *InotifyFileWatcher) removeWatch(ctx context.Context) {
+	for i := 0; i < 30; i++ {
+		err := fw.w.RemoveWatch(fw.Filename)
+		if err == nil {
+			return
+		}
+		switch err := err.(type) {
+		default:
+			log.Printf("RemoveWatch(%s) err:%s", fw.Filename, err)
+			return
+		case *os.SyscallError:
+			log.Printf("RemoveWatch(%s) SysCallError:%s", fw.Filename, err)
+		}
+		time.Sleep(5 * time.Second)
+	}
+}
+
+func (fw *InotifyFileWatcher) changeEventsWorker(ctx context.Context, changes *FileChanges) {
+	defer fw.removeWatch(ctx)
+	defer changes.Close()
+	var inCreate bool
+	var CreateTimer <-chan time.Time
+	fwFilename, err := filepath.Abs(fw.Filename)
+	if err != nil {
+		return
+	}
+
+	for {
+		var evt *fsnotify.FileEvent
+		var ok bool
+
+		select {
+		case <-ctx.Done():
+			return
+		case evt, ok = <-fw.dw.Event: // ディレクトリ監視イベント
+			if !ok {
+				return
+			}
+			if !evt.IsCreate() { // IsCreate 以外は無視
+				continue
+			}
+			evtName, err := filepath.Abs(evt.Name)
+			if err != nil {
+				return
+			}
+			if evtName == fwFilename {
+				inCreate = true
+				log.Printf("Received IsCreate: %s", fwFilename)
+				CreateTimer = time.After(fw.delay)
+				continue
+			}
+
+		case evt, ok = <-fw.w.Event: // ファイル監視イベント
+			if !ok {
+				return
+			}
+		case <-CreateTimer:
+			log.Printf("IsCreate timeout: %s", fwFilename)
+			changes.NotifyRotated() //IsCreateからタイムアウトしたら強制rotate
 			return
 		}
 
-		for {
-			var evt *fsnotify.FileEvent
-			var ok bool
-
-			select {
-			case <-ctx.Done():
-				return
-			case evt, ok = <-fw.dw.Event: // ディレクトリ監視イベント
-				if !ok {
-					return
-				}
-				if !evt.IsCreate() { // IsCreate 以外は無視
-					continue
-				}
-				evtName, err := filepath.Abs(evt.Name)
-				if err != nil {
-					return
-				}
-				if evtName == fwFilename {
-					inCreate = true
-					log.Printf("Received IsCreate: %s", fwFilename)
-					CreateTimer = time.After(fw.delay)
-					continue
-				}
-
-			case evt, ok = <-fw.w.Event: // ファイル監視イベント
-				if !ok {
-					return
-				}
-			case <-CreateTimer:
-				log.Printf("IsCreate timeout: %s", fwFilename)
-				changes.NotifyRotated() //IsCreateからタイムアウトしたら強制rotate
+		switch {
+		case evt.IsCloseWrite():
+			if inCreate {
+				log.Printf("Received IsCreate & IsCloseWrite: %s", fwFilename)
+				changes.NotifyRotated()
 				return
 			}
-
-			switch {
-			case evt.IsCloseWrite():
-				if inCreate {
-					log.Printf("Received IsCreate & IsCloseWrite: %s", fwFilename)
-					changes.NotifyRotated()
-					return
-				}
-			case evt.IsModify():
-				changes.NotifyModified()
-			}
+		case evt.IsModify():
+			changes.NotifyModified()
 		}
-	}()
+	}
 
-	return changes
 }

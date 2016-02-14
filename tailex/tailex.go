@@ -92,7 +92,9 @@ func (c *TailEx) tailFileSyncLoop(ctx context.Context) {
 		err := c.tail.Stop() //  古い方を止める
 		if err != nil {
 			log.Printf("TailEx.tail.Stop err:%s", err)
-			c.Stop()
+			if serr := c.Stop(); serr != nil {
+				log.Printf("TailEx c.Stop err:%s", serr)
+			}
 			return
 		}
 		//log.Printf("TailEx end tail.Stop %s:%s", c.Path, c.TimeSlice)
@@ -234,7 +236,9 @@ func (c *TailEx) newOpen(ctx context.Context) error {
 		if err != context.Canceled {
 			log.Printf("TailEx.tailFile file:%s, err:%s", c.FilePath, err)
 		}
-		c.Stop()
+		if serr := c.Stop(); serr != nil {
+			log.Printf("newOpen c.Stop err:%s", serr)
+		}
 		return err
 	}
 	log.Printf("Tail Open file %s", c.FilePath)

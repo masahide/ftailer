@@ -11,6 +11,7 @@ import (
 	"golang.org/x/net/context"
 )
 
+/*
 var registLogConfig = ftail.Config{
 	Name:   "regist.log",
 	BufDir: "testbuf",
@@ -21,42 +22,47 @@ var registLogConfig = ftail.Config{
 		Config: tail.Config{},
 	},
 }
+*/
 
-var accessLogConfig = ftail.Config{
-	Name:   "access_log",
-	BufDir: "testbuf",
-	Period: 1 * time.Minute,
-	Config: tailex.Config{
-		PathFmt:      "/var/log/httpd/%Y%m%d/kibana-test.access_log",
-		RotatePeriod: 24 * time.Hour,
-		Time:         time.Now(),
-		Delay:        10 * time.Second,
-		Config:       tail.Config{},
-	},
-}
-var testLogConfig = ftail.Config{
-	Name:   "test_log",
-	BufDir: "testbuf",
-	Period: 1 * time.Minute,
-	Config: tailex.Config{
-		PathFmt:      "testlog/%Y%m%d/%H%M.log",
-		RotatePeriod: 2 * time.Minute,
-		Time:         time.Now(),
-		Delay:        5 * time.Second,
-		Config:       tail.Config{},
-	},
-}
+var (
+	/*
+		accessLogConfig = ftail.Config{
+			Name:   "access_log",
+			BufDir: "testbuf",
+			Period: 1 * time.Minute,
+			Config: tailex.Config{
+				PathFmt:      "/var/log/httpd/%Y%m%d/kibana-test.access_log",
+				RotatePeriod: 24 * time.Hour,
+				Time:         time.Now(),
+				Delay:        10 * time.Second,
+				Config:       tail.Config{},
+			},
+		}
+		testLogConfig = ftail.Config{
+			Name:   "test_log",
+			BufDir: "testbuf",
+			Period: 1 * time.Minute,
+			Config: tailex.Config{
+				PathFmt:      "testlog/%Y%m%d/%H%M.log",
+				RotatePeriod: 2 * time.Minute,
+				Time:         time.Now(),
+				Delay:        5 * time.Second,
+				Config:       tail.Config{},
+			},
+		}
+	*/
 
-var testlogrotateConfig = ftail.Config{
-	Name:   "logrotate.log",
-	BufDir: "testbuf",
-	Period: 5 * time.Minute,
-	Config: tailex.Config{
-		Path: "testlog/logrotate.log",
-		//Path:   "test.log",
-		Config: tail.Config{},
-	},
-}
+	testlogrotateConfig = ftail.Config{
+		Name:   "logrotate.log",
+		BufDir: "testbuf",
+		Period: 5 * time.Minute,
+		Config: tailex.Config{
+			Path: "testlog/logrotate.log",
+			//Path:   "test.log",
+			Config: tail.Config{},
+		},
+	}
+)
 
 func main() {
 	var (

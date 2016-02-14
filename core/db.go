@@ -19,6 +19,7 @@ import (
 
 const (
 	recExt = ".rec"
+	// FixExt 閉じられたファイルの拡張子
 	FixExt = ".fixed"
 	delay  = 0 * time.Second
 )
@@ -64,8 +65,10 @@ func (db *DB) Create(ext string, pos *Position) error {
 		return nil
 	}
 	db.RealFilePath = db.MakeRealFilePath(ext)
-	os.MkdirAll(filepath.Dir(db.RealFilePath), 0755)
-	var err error
+	err := os.MkdirAll(filepath.Dir(db.RealFilePath), 0755)
+	if err != nil {
+		return err
+	}
 	db.FtailDB, err = FtailDBOpen(db.RealFilePath, 0644, nil, pos)
 	if err != nil {
 		db.FtailDB = nil
@@ -182,7 +185,6 @@ func FtailDBOpen(path string, mode os.FileMode, options *FtailDBOptions, pos *Po
 }
 
 func (db *FtailDB) writeHeader(pos *Position) error {
-	var err error
 	if db.bin {
 		data, err := encodeRow(Row{Pos: pos})
 		if err != nil {
@@ -190,10 +192,9 @@ func (db *FtailDB) writeHeader(pos *Position) error {
 		}
 		_, err = db.file.Write(data)
 		return err
-	} else {
-		enc := json.NewEncoder(db.file)
-		err = enc.Encode(pos)
 	}
+	enc := json.NewEncoder(db.file)
+	err := enc.Encode(pos)
 	return err
 }
 func (db *FtailDB) readHeader() (*Position, error) {
@@ -204,13 +205,12 @@ func (db *FtailDB) readHeader() (*Position, error) {
 			return nil, err
 		}
 		return row.Pos, nil
-	} else {
-		dec := json.NewDecoder(db.file)
-		if err := dec.Decode(&pos); err == io.EOF {
-			return nil, nil
-		} else if err != nil {
-			return nil, err
-		}
+	}
+	dec := json.NewDecoder(db.file)
+	if err := dec.Decode(&pos); err == io.EOF {
+		return nil, nil
+	} else if err != nil {
+		return nil, err
 	}
 	return &pos, nil
 
@@ -245,9 +245,9 @@ func (db *FtailDB) Put(row Row) error {
 			return err
 		}
 	} else {
-		b, err := json.Marshal(row)
-		if err != nil {
-			return err
+		b, jerr := json.Marshal(row)
+		if jerr != nil {
+			return jerr
 		}
 		data = append(b, '\n')
 	}
@@ -261,7 +261,6 @@ type Decoder interface {
 
 func (db *FtailDB) ReadAll(w io.Writer) (int64, *Position, error) {
 	var p = db.Pos
-	var err error
 	line := 0
 	size := int64(0)
 	var dec Decoder
@@ -272,6 +271,7 @@ func (db *FtailDB) ReadAll(w io.Writer) (int64, *Position, error) {
 		row := &Row{}
 		line++
 		if db.bin {
+			var err error
 			row, err = decodeRow(db.file)
 			if err == io.EOF {
 				break
@@ -281,7 +281,7 @@ func (db *FtailDB) ReadAll(w io.Writer) (int64, *Position, error) {
 			row.Pos.Name = db.Pos.Name
 			row.Pos.CreateAt = db.Pos.CreateAt
 		} else {
-			err = dec.Decode(row)
+			err := dec.Decode(row)
 			if err == io.EOF {
 				break
 			} else if err != nil {
@@ -289,7 +289,6 @@ func (db *FtailDB) ReadAll(w io.Writer) (int64, *Position, error) {
 			}
 		}
 		var sz int64
-		var err error
 		if row.Bin != nil {
 			r, err := zlib.NewReader(bytes.NewReader(row.Bin))
 			if err != nil {
@@ -299,7 +298,7 @@ func (db *FtailDB) ReadAll(w io.Writer) (int64, *Position, error) {
 				return size, nil, &InvalidFtailDBError{Line: line, File: db.path, S: err.Error()}
 			}
 		} else {
-			if _, err = io.WriteString(w, row.Text); err != nil {
+			if _, err := io.WriteString(w, row.Text); err != nil {
 				return size, nil, &InvalidFtailDBError{Line: line, File: db.path, S: err.Error()}
 			}
 			sz = int64(len(row.Text))
@@ -436,11 +435,10 @@ func decodeRow(f io.Reader) (*Row, error) {
 	Name := make([]byte, LenName)
 	var dataStream = [][]byte{r.Bin, Text, HeadHash, Name}
 	for _, v := range dataStream {
-		_, err := tee.Read(v)
-		if err == io.EOF {
-			return nil, err
-		} else if err != nil {
-			return nil, fmt.Errorf("decodeRow tee.Read failed: %v", err)
+		if _, terr := tee.Read(v); terr == io.EOF {
+			return nil, terr
+		} else if terr != nil {
+			return nil, fmt.Errorf("decodeRow tee.Read failed: %v", terr)
 		}
 	}
 	sum = fnvWriter.Sum32()

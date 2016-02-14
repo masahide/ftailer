@@ -65,7 +65,9 @@ func main() {
 			if _, _, err := db.ReadAll(os.Stdout); err != nil {
 				log.Printf("readDB err:%s", err)
 			}
-			db.Close(false)
+			if err := db.Close(false); err != nil {
+				log.Printf("db.Close err:%s", err)
+			}
 
 		}
 	}

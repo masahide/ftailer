@@ -35,7 +35,6 @@ func (fw *PollingFileWatcher) BlockUntilExists(ctx context.Context) error {
 			return ctx.Err()
 		}
 	}
-	panic("unreachable")
 }
 
 /*

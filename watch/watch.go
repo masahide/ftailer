@@ -4,7 +4,6 @@ package watch
 
 import (
 	"os"
-	"time"
 
 	"golang.org/x/net/context"
 )
@@ -21,7 +20,9 @@ type FileWatcher interface {
 	ChangeEvents(context.Context, os.FileInfo) *FileChanges
 }
 
+/*
 const (
 	headerSize    = 4 * 1024
 	logrotateTime = 24*time.Hour - 5*time.Minute
 )
+*/

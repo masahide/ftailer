@@ -16,6 +16,7 @@ import (
 )
 
 var (
+	// ErrStop  tailを停止
 	ErrStop = fmt.Errorf("tail should now stop")
 )
 
@@ -81,7 +82,7 @@ type Tail struct {
 	watcher watch.FileWatcher
 	changes *watch.FileChanges
 
-	lastDelChReceived time.Time // Last delete channel received time
+	//lastDelChReceived time.Time // Last delete channel received time
 }
 
 var (
@@ -143,7 +144,7 @@ func TailFile(filename string, config Config, w chan bool) (*Tail, error) {
 	return t, nil
 }
 
-// Return the file's current position, like stdio's ftell().
+// Tell Return the file's current position, like stdio's ftell().
 // But this value is not very accurate.
 // it may readed one line in the chan(tail.Lines),
 // so it may lost one line.
@@ -166,15 +167,25 @@ func (tail *Tail) Stop() error {
 }
 
 func (tail *Tail) close() {
-	close(tail.Lines)
 	if tail.file != nil {
-		tail.file.Close()
+		for i := 0; i < 15; i++ {
+			err := tail.file.Close()
+			if err != nil {
+				log.Printf("tail.file.Close err:%s", err)
+				time.Sleep(5 * time.Second)
+				continue
+			}
+		}
+		tail.file = nil
+		close(tail.Lines)
 	}
 }
 
 func (tail *Tail) reopen(ctx context.Context) error {
 	if tail.file != nil {
-		tail.file.Close()
+		if err := tail.file.Close(); err != nil {
+			return err
+		}
 	}
 	for {
 		var err error
@@ -378,7 +389,6 @@ func (tail *Tail) waitForChanges(ctx context.Context) error {
 		case <-ctx.Done():
 			return ErrStop
 		}
-		panic("unreachable")
 	}
 }
 

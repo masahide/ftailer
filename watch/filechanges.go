@@ -54,6 +54,7 @@ func (fc *FileChanges) Close() {
 	*/
 }
 
+/*
 // sendOnlyIfEmpty sends on a bool channel only if the channel has no
 // backlog to be read by other goroutines. This concurrency pattern
 // can be used to notify other goroutines if and only if they are
@@ -65,3 +66,4 @@ func sendOnlyIfEmpty(ch chan bool) {
 	default:
 	}
 }
+*/

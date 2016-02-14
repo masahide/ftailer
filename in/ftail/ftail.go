@@ -124,9 +124,9 @@ func Start(ctx context.Context, c Config, w chan bool) error {
 
 	if f.MaxHeadHashSize != 0 && f.Pos.Name != "" {
 		oldhead := f.head
-		hash, length, err := f.getHeadHash(f.Pos.Name, f.Pos.HashLength)
-		if err != nil {
-			log.Printf("getHeadHash err:%s", err)
+		hash, length, hherr := f.getHeadHash(f.Pos.Name, f.Pos.HashLength)
+		if hherr != nil {
+			log.Printf("getHeadHash err:%s", hherr)
 		} else {
 			if f.Pos.HeadHash == hash && f.Pos.HashLength == length { // ポジションファイルのハッシュ値と一致した場合はSeekInfoをセット
 				log.Printf("match headHash: %s, head:%s", f.Pos, f.head)
@@ -156,7 +156,11 @@ func Start(ctx context.Context, c Config, w chan bool) error {
 	*/
 	<-w
 	f.Writer = NopCloser(&f.buf)
-	defer f.Flush()
+	defer func() {
+		if err := f.Flush(); err != nil {
+			log.Printf("f.Flush err:%s", err)
+		}
+	}()
 
 	for {
 		select {
@@ -200,9 +204,9 @@ func (f *Ftail) lineNotifyAction(ctx context.Context, line *tail.Line, w chan bo
 			f.lastSlice = timeSlice
 		}
 		// 古いDBを閉じる
-		if _, err := f.rec.CloseOldDbs(line.Time); err != nil {
-			log.Printf("CloseOldDbs err:%s", err)
-			return err
+		if _, cerr := f.rec.CloseOldDbs(line.Time); cerr != nil {
+			log.Printf("CloseOldDbs err:%s", cerr)
+			return cerr
 		}
 	case tail.NewFileNotify:
 		f.lastTime = line.Time
@@ -274,7 +278,9 @@ func (f *Ftail) Flush() error {
 	row := core.Row{Time: f.lastTime, Pos: f.Pos}
 	row.Text = f.buf.String()
 	_, err = io.Copy(w, &f.buf)
-	w.Close()
+	if cerr := w.Close(); cerr != nil {
+		log.Printf("zlib close err:%s", cerr)
+	}
 	if err != nil {
 		return err
 	}
@@ -301,7 +307,11 @@ func (f *Ftail) getHeadHash(fname string, getLength int64) (hash string, length 
 	if err != nil {
 		return
 	}
-	defer readFile.Close()
+	defer func() {
+		if err := readFile.Close(); err != nil {
+			log.Printf("readFile.Close err:%s", err)
+		}
+	}()
 	tee := io.TeeReader(io.LimitReader(readFile, getLength), f.headHash)
 	f.head, err = ioutil.ReadAll(tee)
 	length = int64(len(f.head))
