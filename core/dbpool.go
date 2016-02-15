@@ -21,7 +21,7 @@ var (
 )
 
 // open
-func (r *DBpool) open(t time.Time) (*DB, Position, error) {
+func (r *DBpool) openPool(t time.Time) (*DB, Position, error) {
 	var ok bool
 	var p Position
 	var err error
@@ -35,13 +35,9 @@ func (r *DBpool) open(t time.Time) (*DB, Position, error) {
 	db = &DB{Name: r.Name, Path: r.Path, Time: t}
 	if err = db.Open(recExt, nil); err != nil {
 		if serr, ok := err.(*InvalidFtailDBError); ok {
-			if cerr := db.Close(false); cerr != nil {
-				return nil, p, cerr
-			}
-			if derr := db.Delete(recExt); derr != nil {
-				return nil, p, derr
-			}
-			log.Fatalf("Recovered in DBpool.open : %s", serr)
+			cerr := db.Close(false)
+			derr := db.Delete(recExt)
+			log.Fatalf("Recovered in DBpool.open : %s, db.Close ret:%v, db.Delete ret:%v", serr, cerr, derr)
 		} else {
 			return nil, p, err
 		}
@@ -60,7 +56,6 @@ func (r *DBpool) open(t time.Time) (*DB, Position, error) {
 	}
 	//log.Printf("opened DB.: %s:%v", r.Name, t) //TODO: test
 	r.dbs[t] = db
-	//r.autoClose(t)
 	return db, p, nil
 }
 
@@ -84,7 +79,6 @@ func (r *DBpool) CreateDB(t time.Time, pos *Position) (*DB, error) {
 	//log.Printf("DB was created.: %s:%v", r.Name, t) // TODO: test
 	r.dbs[t] = db
 	r.inTime = t
-	//r.autoClose(t)
 	return db, nil
 }
 
@@ -165,17 +159,6 @@ func (r *DBpool) CloseOldDbs(t time.Time) (int, error) {
 	return len(r.dbs), nil
 }
 
-/*
-func (r *DBpool) autoClose(t time.Time) {
-	wait := t.Add(r.Period + delay).Sub(time.Now())
-	if wait <= 0 {
-		log.Printf("autoClose: Closed the DB files of old time. wait:%v t:%s", wait, t)
-		r.Close(t, true)
-		return
-	}
-}
-*/
-
 // Init
 // 最終のdbからPositionを読み込み
 func (r *DBpool) Init() (pos *Position, err error) {
@@ -225,13 +208,12 @@ func (r *DBpool) recPositon() (*Position, error) {
 	var p Position
 	for _, f := range dbfiles {
 
-		if _, p, err = r.open(f.Time); err != nil {
-			log.Printf("db open(%s) err: %s", f.Path, err)
+		if _, p, err = r.openPool(f.Time); err != nil {
+			log.Printf("db openPool(%s) err: %s", f.Path, err)
 			return nil, err
 		}
 
 		log.Printf("load positon: %v", p)
-		//r.autoClose(db.Time)
 	}
 	return &p, err
 }

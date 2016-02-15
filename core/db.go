@@ -165,7 +165,7 @@ func FtailDBOpen(path string, mode os.FileMode, options *FtailDBOptions, pos *Po
 	if db.PosError == io.EOF {
 		db.Pos = pos
 		if pos == nil {
-			return nil, fmt.Errorf("new file: pos is %v, file:%s", pos, path)
+			return nil, &InvalidFtailDBError{File: path, S: "new file pos is nil"}
 		}
 		if err := db.writeHeader(pos); err != nil {
 			return nil, err
