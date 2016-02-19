@@ -145,7 +145,7 @@ func Start(ctx context.Context, c Config, w chan bool) error {
 			f.Location = &tail.SeekInfo{Offset: f.Pos.Offset}
 		}
 	}
-	t := tailex.TailFile(ctx, f.Config.Config, w)
+	t := tailex.NewTailEx(ctx, f.Config.Config, w)
 	//var buf bytes.Buffer
 	f.buf = bytes.Buffer{}
 	/*

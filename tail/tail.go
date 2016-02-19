@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"golang.org/x/net/context"
@@ -36,8 +37,8 @@ type Line struct {
 	NotifyType int
 }
 
-// NewLine returns a Line with present time.
-func NewLine(text []byte) *Line {
+// newLine returns a Line with present time.
+func newLine(text []byte) *Line {
 	return &Line{Text: text, Time: time.Now(), Err: nil}
 }
 
@@ -72,8 +73,6 @@ type Tail struct {
 	Lines    chan *Line
 	Config
 
-	file      *os.File
-	reader    *bufio.Reader
 	tracker   *watch.InotifyTracker
 	ticker    *time.Ticker
 	openTime  time.Time
@@ -81,7 +80,12 @@ type Tail struct {
 
 	watcher watch.FileWatcher
 	changes *watch.FileChanges
+	Ctx     context.Context
+	Cancel  context.CancelFunc
 
+	reader *bufio.Reader
+	file   *os.File
+	mu     sync.RWMutex
 	//lastDelChReceived time.Time // Last delete channel received time
 }
 
@@ -103,6 +107,7 @@ func TailFile(filename string, config Config, w chan bool) (*Tail, error) {
 		Config:    config,
 		WorkLimit: w,
 	}
+	t.Ctx, t.Cancel = context.WithCancel(context.Background())
 
 	// when Logger was not specified in config, use default logger
 	if t.Logger == nil {
@@ -132,11 +137,11 @@ func TailFile(filename string, config Config, w chan bool) (*Tail, error) {
 	}
 
 	if t.MustExist {
-		var err error
-		t.file, err = os.Open(t.Filename)
+		file, err := os.Open(t.Filename)
 		if err != nil {
 			return nil, err
 		}
+		t.setFile(file)
 	}
 
 	go t.tailFileSync()
@@ -144,47 +149,88 @@ func TailFile(filename string, config Config, w chan bool) (*Tail, error) {
 	return t, nil
 }
 
+func (tail *Tail) getFile() *os.File {
+	tail.mu.RLock()
+	defer tail.mu.RUnlock()
+	return tail.file
+}
+func (tail *Tail) setFile(file *os.File) {
+	tail.mu.Lock()
+	defer tail.mu.Unlock()
+	tail.file = file
+}
+
+func (tail *Tail) fileStat() (os.FileInfo, error) {
+	tail.mu.Lock()
+	defer tail.mu.Unlock()
+	return tail.file.Stat()
+}
+
+func (tail *Tail) fileSeek(offset int64, whence int) (ret int64, err error) {
+	tail.mu.Lock()
+	defer tail.mu.Unlock()
+	return tail.file.Seek(offset, whence)
+}
+func (tail *Tail) fileClose() (err error) {
+	tail.mu.Lock()
+	defer tail.mu.Unlock()
+	return tail.file.Close()
+}
+func (tail *Tail) readerBuffered() int {
+	tail.mu.RLock()
+	defer tail.mu.RUnlock()
+	return tail.reader.Buffered()
+}
+func (tail *Tail) readerReset(r io.Reader) {
+	tail.mu.Lock()
+	defer tail.mu.Unlock()
+	tail.reader.Reset(r)
+}
+func (tail *Tail) setReader(r io.Reader) {
+	tail.mu.Lock()
+	defer tail.mu.Unlock()
+	tail.reader = bufio.NewReader(r)
+}
+func (tail *Tail) readerReadBytes(delim byte) (line []byte, err error) {
+	tail.mu.Lock()
+	defer tail.mu.Unlock()
+	return tail.reader.ReadBytes(delim)
+}
+
 // Tell Return the file's current position, like stdio's ftell().
-// But this value is not very accurate.
-// it may readed one line in the chan(tail.Lines),
-// so it may lost one line.
 func (tail *Tail) Tell() (offset int64, err error) {
-	if tail.file == nil {
+	return tail.tell()
+}
+
+func (tail *Tail) tell() (offset int64, err error) {
+	if tail.getFile == nil {
 		return
 	}
-	offset, err = tail.file.Seek(0, os.SEEK_CUR)
+	offset, err = tail.fileSeek(0, os.SEEK_CUR)
 	if err == nil {
-		offset -= int64(tail.reader.Buffered())
+		offset -= int64(tail.readerBuffered())
 	}
 	return
 }
 
-// Stop stops the tailing activity.
-func (tail *Tail) Stop() error {
-	//	tail.Kill(nil)
-	//	return tail.Wait()
-	return nil
-}
-
 func (tail *Tail) close() {
-	if tail.file != nil {
-		if err := tail.file.Close(); err != nil {
+	if tail.getFile() != nil {
+		if err := tail.fileClose(); err != nil {
 			log.Printf("tail.file.Close err:%s", err)
 		}
 	}
-	tail.file = nil
+	tail.setFile(nil)
 }
 
 func (tail *Tail) reopen(ctx context.Context) error {
-	if tail.file != nil {
-		if err := tail.file.Close(); err != nil {
+	if tail.getFile() != nil {
+		if err := tail.fileClose(); err != nil {
 			log.Printf("reopen error. file.Close:%s", err)
 			return err
 		}
 	}
 	for {
-		var err error
-		tail.file, err = os.Open(tail.Filename)
+		file, err := os.Open(tail.Filename)
 		if err != nil {
 			if os.IsNotExist(err) {
 				tail.Logger.Printf("Waiting for %s to appear...", tail.Filename)
@@ -195,6 +241,7 @@ func (tail *Tail) reopen(ctx context.Context) error {
 			}
 			return fmt.Errorf("Unable to open file %s: %s", tail.Filename, err)
 		}
+		tail.setFile(file)
 		break
 	}
 	return nil
@@ -203,7 +250,7 @@ func (tail *Tail) reopen(ctx context.Context) error {
 func (tail *Tail) readLine() ([]byte, error) {
 	tail.WorkLimit <- true
 	defer func() { <-tail.WorkLimit }()
-	line, err := tail.reader.ReadBytes(byte('\n'))
+	line, err := tail.readerReadBytes(byte('\n'))
 	if err != nil {
 		// Note ReadString "returns the data read before the error" in
 		// case of an error, including EOF, so we return it as is. The
@@ -217,14 +264,9 @@ func (tail *Tail) readLine() ([]byte, error) {
 }
 
 func (tail *Tail) tailFileSync() {
-	var (
-		ctx    context.Context
-		cancel context.CancelFunc
-	)
-	ctx, cancel = context.WithCancel(context.Background())
 
 	//	defer tail.Done()
-	defer cancel()
+	defer tail.Cancel()
 	defer tail.close()
 
 	tail.ticker = &time.Ticker{}
@@ -235,10 +277,9 @@ func (tail *Tail) tailFileSync() {
 
 	if !tail.MustExist {
 		// deferred first open.
-		err := tail.reopen(ctx)
+		err := tail.reopen(tail.Ctx)
 		if err != nil {
 			tail.Logger.Printf("tail.reopen() err: %s", err)
-			cancel()
 			return
 		}
 	}
@@ -247,17 +288,20 @@ func (tail *Tail) tailFileSync() {
 	offset := int64(0)
 	if tail.Location != nil {
 		offset = tail.Location.Offset
-		_, err := tail.file.Seek(offset, tail.Location.Whence)
+		_, err := tail.fileSeek(offset, tail.Location.Whence)
 		tail.Logger.Printf("Seeked %s - %+v\n", tail.Filename, tail.Location)
 		if err != nil {
 			tail.Logger.Printf("Seek error on %s: %s", tail.Filename, err)
-			cancel()
 			return
 		}
 	}
 
 	tail.openReader()
-	tail.Lines <- &Line{NotifyType: NewFileNotify, Filename: tail.Filename, Offset: offset, Time: time.Now(), OpenTime: tail.openTime}
+	select {
+	case tail.Lines <- &Line{NotifyType: NewFileNotify, Filename: tail.Filename, Offset: offset, Time: time.Now(), OpenTime: tail.openTime}:
+	case <-tail.Ctx.Done():
+		return
+	}
 
 	// Read line by line.
 	for {
@@ -267,23 +311,22 @@ func (tail *Tail) tailFileSync() {
 			// When EOF is reached, wait for more data to become
 			// available. Wait strategy is based on the `tail.watcher`
 			// implementation (inotify or polling).
-			err := tail.waitForChanges(ctx)
+			err := tail.waitForChanges(tail.Ctx)
 			if err != nil {
 				if err != ErrStop {
 					tail.Logger.Printf("tail.waitForChanges() err: %s", err)
-					cancel()
 				}
 				return
 			}
 		} else if err != nil {
 			// non-EOF error
 			tail.Logger.Printf("Error reading %s: %s", tail.Filename, err)
-			cancel()
+			tail.Cancel()
 			return
 		}
 
 		select {
-		case <-ctx.Done():
+		case <-tail.Ctx.Done():
 			return
 		default:
 		}
@@ -291,9 +334,9 @@ func (tail *Tail) tailFileSync() {
 }
 
 func (tail *Tail) readSend() error {
-	offset, err := tail.Tell()
+	offset, err := tail.tell()
 	if err != nil {
-		tail.Logger.Printf("tail.Tell() err: %s", err)
+		tail.Logger.Printf("tail.tell() err: %s", err)
 		return err
 	}
 
@@ -331,7 +374,7 @@ func (tail *Tail) readSend() error {
 // reopened if ReOpen is true. Truncated files are always reopened.
 func (tail *Tail) waitForChanges(ctx context.Context) error {
 	if tail.changes == nil {
-		st, err := tail.file.Stat()
+		st, err := tail.fileStat()
 		if err != nil {
 			return err
 		}
@@ -342,25 +385,23 @@ func (tail *Tail) waitForChanges(ctx context.Context) error {
 
 		select {
 		case <-tail.ticker.C:
-			offset, err := tail.Tell()
+			offset, err := tail.tell()
 			if err != nil {
 				return err
 			}
-			tail.Lines <- &Line{NotifyType: TickerNotify, Time: time.Now(), Filename: tail.Filename, OpenTime: tail.openTime, Offset: offset}
+			select {
+			case tail.Lines <- &Line{NotifyType: TickerNotify, Time: time.Now(), Filename: tail.Filename, OpenTime: tail.openTime, Offset: offset}:
+			case <-ctx.Done():
+				return nil
+			}
 			continue
 		case mode := <-tail.changes.Modified:
 			switch mode {
 			case watch.None, watch.Modified:
 				return nil
 			case watch.Rotated:
-				for {
-					err := tail.readSend()
-					if err == io.EOF {
-						break
-					}
-					if err != nil {
-						return err
-					}
+				if err := tail.readSendAll(); err != nil {
+					return err
 				}
 				if tail.ReOpen {
 					tail.Logger.Printf("Rotated event file %s. Re-opening ...", tail.Filename)
@@ -370,7 +411,10 @@ func (tail *Tail) waitForChanges(ctx context.Context) error {
 					}
 					tail.Logger.Printf("Successfully reopened %s", tail.Filename)
 					tail.openReader()
-					tail.Lines <- &Line{NotifyType: NewFileNotify, Filename: tail.Filename, Offset: 0, Time: time.Now(), OpenTime: tail.openTime}
+					select {
+					case tail.Lines <- &Line{NotifyType: NewFileNotify, Filename: tail.Filename, Offset: 0, Time: time.Now(), OpenTime: tail.openTime}:
+					case <-ctx.Done():
+					}
 					return nil
 				} else {
 					tail.changes = nil
@@ -379,6 +423,9 @@ func (tail *Tail) waitForChanges(ctx context.Context) error {
 				}
 			default:
 				log.Printf("tail.changes.Modified: mode:%v", mode)
+				if err := tail.readSendAll(); err != nil {
+					return err
+				}
 				return ErrStop
 			}
 		case <-ctx.Done():
@@ -387,8 +434,21 @@ func (tail *Tail) waitForChanges(ctx context.Context) error {
 	}
 }
 
+func (tail *Tail) readSendAll() error {
+	for {
+		err := tail.readSend()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (tail *Tail) openReader() {
-	tail.reader = bufio.NewReader(tail.file)
+	tail.setReader(tail.getFile())
 	fi, err := os.Stat(tail.Filename)
 	if err != nil {
 		tail.openTime = time.Now()
@@ -402,12 +462,12 @@ func (tail *Tail) seekEnd() error {
 }
 
 func (tail *Tail) seekTo(pos SeekInfo) error {
-	_, err := tail.file.Seek(pos.Offset, pos.Whence)
+	_, err := tail.fileSeek(pos.Offset, pos.Whence)
 	if err != nil {
 		return fmt.Errorf("Seek error on %s: %s", tail.Filename, err)
 	}
 	// Reset the read buffer whenever the file is re-seek'ed
-	tail.reader.Reset(tail.file)
+	tail.readerReset(tail.getFile())
 	return nil
 }
 
@@ -415,12 +475,15 @@ func (tail *Tail) seekTo(pos SeekInfo) error {
 // if necessary. Return false if rate limit is reached.
 func (tail *Tail) sendLine(line []byte) error {
 	now := time.Now()
-	offset, err := tail.Tell()
+	offset, err := tail.tell()
 	if err != nil {
 		//tail.Kill(err)
 		return err
 	}
-	tail.Lines <- &Line{NotifyType: NewLineNotify, Text: line, Time: now, Filename: tail.Filename, OpenTime: tail.openTime, Offset: offset}
+	select {
+	case tail.Lines <- &Line{NotifyType: NewLineNotify, Text: line, Time: now, Filename: tail.Filename, OpenTime: tail.openTime, Offset: offset}:
+	case <-tail.Ctx.Done():
+	}
 	return nil
 }
 
@@ -431,4 +494,5 @@ func (tail *Tail) Cleanup() {
 	if tail.tracker != nil {
 		tail.tracker.CloseAll()
 	}
+	tail.Cancel()
 }

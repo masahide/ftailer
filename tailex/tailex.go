@@ -42,10 +42,10 @@ const (
 
 type TailEx struct {
 	Config
-	Lines     chan *tail.Line
-	TimeSlice time.Time // 現在のファイルの time slice
-	FilePath  string
 	WorkLimit chan bool
+	Lines     chan *tail.Line
+	timeSlice time.Time // 現在のファイルの time slice
+	filePath  string
 	//FileInfo  chan FileInfo
 	old bool
 
@@ -61,15 +61,15 @@ func Truncate(t time.Time, d time.Duration) time.Time {
 	return t.Truncate(d)
 }
 
-func TailFile(ctx context.Context, config Config, w chan bool) *TailEx {
+func NewTailEx(ctx context.Context, config Config, w chan bool) *TailEx {
 	c := &TailEx{
 		Config:    config,
 		WorkLimit: w,
-		TimeSlice: Truncate(config.Time, config.RotatePeriod),
 		Lines:     make(chan *tail.Line, config.LinesChanSize),
+		timeSlice: Truncate(config.Time, config.RotatePeriod),
 		//FileInfo:  make(chan FileInfo),
 	}
-	log.Printf("init config.Time:%s -> TimeSlice:%s", config.Time, Truncate(config.Time, config.RotatePeriod)) //TODO: test
+	log.Printf("init config.Time:%s -> timeSlice:%s", config.Time, Truncate(config.Time, config.RotatePeriod)) //TODO: test
 
 	go c.tailFileSyncLoop(ctx)
 	return c
@@ -88,18 +88,8 @@ func (c *TailEx) tailFileSyncLoop(ctx context.Context) {
 		//
 		tailFileSyncErr := c.tailFileSync(ctx)
 
-		log.Printf("TailEx tail.Stop() %s:%s", c.FilePath, c.TimeSlice)
-		err := c.tail.Stop() //  古い方を止める
-		if err != nil {
-			log.Printf("TailEx.tail.Stop err:%s", err)
-			if serr := c.Stop(); serr != nil {
-				log.Printf("TailEx c.Stop err:%s", serr)
-			}
-			return
-		}
-		//log.Printf("TailEx end tail.Stop %s:%s", c.Path, c.TimeSlice)
 		c.tail.Cleanup() //  古い方をcleanup
-		//log.Printf("TailEx end tail.cleanup %s:%s", c.Path, c.TimeSlice)
+		//log.Printf("TailEx end tail.cleanup %s:%s", c.Path, c.timeSlice)
 		c.tail = nil
 		//c.Pos.Offset = 0
 		c.Location = nil
@@ -107,7 +97,7 @@ func (c *TailEx) tailFileSyncLoop(ctx context.Context) {
 		if tailFileSyncErr != nil {
 			return
 		}
-		c.TimeSlice = c.TimeSlice.Add(c.RotatePeriod)
+		c.timeSlice = c.timeSlice.Add(c.RotatePeriod)
 	}
 }
 
@@ -115,7 +105,7 @@ func (c *TailEx) tailFileSyncLoop(ctx context.Context) {
 func (c *TailEx) GlobSearchLoop(ctx context.Context, pathFmt string) (string, error) {
 	firstFlag := true
 	for {
-		globPath := Time2Path(pathFmt, c.TimeSlice)
+		globPath := Time2Path(pathFmt, c.timeSlice)
 		c.WorkLimit <- true
 		s, err := GlobSearch(globPath)
 		<-c.WorkLimit
@@ -136,31 +126,31 @@ func (c *TailEx) GlobSearchLoop(ctx context.Context, pathFmt string) (string, er
 		}
 
 		c.Lines <- &tail.Line{NotifyType: GlobLoopNotify, Time: time.Now()}
-		// TimeSliceが過去なら進める
-		if Truncate(time.Now(), c.RotatePeriod).Sub(c.TimeSlice) > 0 {
-			next := c.TimeSlice.Add(c.RotatePeriod)
-			log.Printf("GlobSearchLoop %s: add TimeSlice:%s -> %v", pathFmt, c.TimeSlice, next)
-			c.TimeSlice = next
+		// timeSliceが過去なら進める
+		if Truncate(time.Now(), c.RotatePeriod).Sub(c.timeSlice) > 0 {
+			next := c.timeSlice.Add(c.RotatePeriod)
+			log.Printf("GlobSearchLoop %s: add timeSlice:%s -> %v", pathFmt, c.timeSlice, next)
+			c.timeSlice = next
 		}
 	}
 }
 
-func (c *TailEx) tailFile(ctx context.Context) error {
+func (c *TailEx) tailExFile(ctx context.Context) error {
 	var err error
 	if c.PathFmt != "" {
-		c.FilePath, err = c.GlobSearchLoop(ctx, c.PathFmt)
+		c.filePath, err = c.GlobSearchLoop(ctx, c.PathFmt)
 		if err != nil {
 			return err
 		}
 		c.Config.Config.ReOpen = false
 	} else {
-		c.FilePath, err = c.GlobSearchLoop(ctx, c.Path)
+		c.filePath, err = c.GlobSearchLoop(ctx, c.Path)
 		if err != nil {
 			return err
 		}
 	}
-	log.Printf("Start tail.TailFile(%s) location:%# v", c.FilePath, c.Location) //TODO: test
-	t, err := tail.TailFile(c.FilePath, c.Config.Config, c.WorkLimit)
+	log.Printf("Start tail.TailFile(%s) location:%# v", c.filePath, c.Location) //TODO: test
+	t, err := tail.TailFile(c.filePath, c.Config.Config, c.WorkLimit)
 	if err != nil {
 		return err
 	}
@@ -177,41 +167,36 @@ func (c *TailEx) Tell() (offset int64, err error) {
 }
 
 // Stop stops the tailing activity.
-func (c *TailEx) Stop() error {
+func (c *TailEx) Stop() {
 	if c.tail != nil {
-		log.Printf("tail.Stop() Path:%s", c.FilePath)
-		if err := c.tail.Stop(); err != nil {
-			return err
-		}
+		close(c.Lines)
 		c.tail = nil
 	}
-	close(c.Lines)
-	return nil
 }
 
 func (c *TailEx) tailFileSync(ctx context.Context) error {
 	//var n <-chan time.Time
 	var nextFileTime time.Time
 	if c.PathFmt != "" {
-		next := c.TimeSlice.Add(c.RotatePeriod)
+		next := c.timeSlice.Add(c.RotatePeriod)
 		nextwait := next.Sub(time.Now())
 		c.old = nextwait <= 0
 		if c.old {
 			nextwait = 0
 		}
-		log.Printf("set timer nextwait:%v, TimeSlice:%v, old:%v", nextwait, c.TimeSlice, c.old) //TODO: test
+		log.Printf("set timer nextwait:%v, timeSlice:%v, old:%v", nextwait, c.timeSlice, c.old) //TODO: test
 		nextFileTime = time.Now().Add(nextwait)
 	}
 	for {
 		select {
 		case <-ctx.Done():
 			// キャンセル処理
-			//log.Printf("tailFileSync ctx Done. %s:%s, %v", c.FilePath, c.TimeSlice, ctx.Err()) //TODO: test
+			//log.Printf("tailFileSync ctx Done. %s:%s, %v", c.filePath, c.timeSlice, ctx.Err()) //TODO: test
 			return ctx.Err()
 		case l := <-c.tail.Lines:
 			//log.Printf("l:%v,%s", l.Time, l.Text) //TODO:test
 			if c.old {
-				l.Time = c.TimeSlice.Add(c.RotatePeriod - 1*time.Second)
+				l.Time = c.timeSlice.Add(c.RotatePeriod - 1*time.Second)
 			}
 			if l.NotifyType == tail.TickerNotify {
 				if !nextFileTime.IsZero() && !c.old && l.Time.Sub(nextFileTime) >= c.Delay {
@@ -223,7 +208,7 @@ func (c *TailEx) tailFileSync(ctx context.Context) error {
 			c.Lines <- l
 			/*
 				case createAt := <-c.tail.OpenTime:
-					fi := FileInfo{Path: c.FilePath, CreateAt: createAt}
+					fi := FileInfo{Path: c.filePath, CreateAt: createAt}
 					log.Printf("Open FileInfo: Path:%s, CreateAt:%s", fi.Path, fi.CreateAt)
 					c.FileInfo <- fi
 			*/
@@ -231,25 +216,23 @@ func (c *TailEx) tailFileSync(ctx context.Context) error {
 	}
 }
 func (c *TailEx) newOpen(ctx context.Context) error {
-	err := c.tailFile(ctx) // 新しいファイルを開く
+	err := c.tailExFile(ctx) // 新しいファイルを開く
 	if err != nil {
 		if err != context.Canceled {
-			log.Printf("TailEx.tailFile file:%s, err:%s", c.FilePath, err)
+			log.Printf("TailEx.tailExFile file:%s, err:%s", c.filePath, err)
 		}
-		if serr := c.Stop(); serr != nil {
-			log.Printf("newOpen c.Stop err:%s", serr)
-		}
+		c.Stop()
 		return err
 	}
-	log.Printf("Tail Open file %s", c.FilePath)
+	log.Printf("Tail Open file %s", c.filePath)
 	/*
-		fi, err := os.Stat(c.FilePath)
+		fi, err := os.Stat(c.filePath)
 		if err != nil {
-			log.Printf("TailEx os.Stat file:%s, err:%s", c.FilePath, err)
+			log.Printf("TailEx os.Stat file:%s, err:%s", c.filePath, err)
 			c.Stop()
 			return err
 		}
-		c.FileInfo <- FileInfo{Path: c.FilePath, CreateAt: fi.ModTime()}
+		c.FileInfo <- FileInfo{Path: c.filePath, CreateAt: fi.ModTime()}
 	*/
 	return nil
 }
