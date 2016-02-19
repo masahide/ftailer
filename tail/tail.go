@@ -168,22 +168,17 @@ func (tail *Tail) Stop() error {
 
 func (tail *Tail) close() {
 	if tail.file != nil {
-		for i := 0; i < 15; i++ {
-			err := tail.file.Close()
-			if err != nil {
-				log.Printf("tail.file.Close err:%s", err)
-				time.Sleep(5 * time.Second)
-				continue
-			}
+		if err := tail.file.Close(); err != nil {
+			log.Printf("tail.file.Close err:%s", err)
 		}
-		tail.file = nil
-		close(tail.Lines)
 	}
+	tail.file = nil
 }
 
 func (tail *Tail) reopen(ctx context.Context) error {
 	if tail.file != nil {
 		if err := tail.file.Close(); err != nil {
+			log.Printf("reopen error. file.Close:%s", err)
 			return err
 		}
 	}

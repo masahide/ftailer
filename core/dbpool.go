@@ -137,7 +137,7 @@ func (r *DBpool) Close(t time.Time, fix bool) error {
 func (r *DBpool) AllClose() {
 	for k, db := range r.dbs {
 		if err := db.Close(false); err != nil {
-			log.Printf("Close err:%s", err)
+			log.Printf("db.Close err:%s", err)
 		}
 		delete(r.dbs, k)
 	}
@@ -150,7 +150,7 @@ func (r *DBpool) CloseOldDbs(t time.Time) (int, error) {
 		if elapsed <= 0 {
 			log.Printf("Closed the DB files of old time. wait:%v t:%s", elapsed, db.Time)
 			if err := db.Close(true); err != nil {
-				log.Printf("Close err:%s", err)
+				log.Printf("db.Close err:%s", err)
 				return len(r.dbs), err
 			}
 			delete(r.dbs, k)
