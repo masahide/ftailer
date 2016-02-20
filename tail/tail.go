@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -62,10 +61,6 @@ type Config struct {
 
 	// Generic IO
 	NotifyInterval time.Duration // Notice interval of the elapsed time
-
-	// Logger, when nil, is set to tail.DefaultLogger
-	// To disable logging: set field to tail.DiscardingLogger
-	Logger *log.Logger
 }
 
 type Tail struct {
@@ -89,13 +84,6 @@ type Tail struct {
 	//lastDelChReceived time.Time // Last delete channel received time
 }
 
-var (
-	// DefaultLogger is used when Config.Logger == nil
-	DefaultLogger = log.New(os.Stderr, "", log.LstdFlags)
-	// DiscardingLogger can be used to disable logging output
-	DiscardingLogger = log.New(ioutil.Discard, "", 0)
-)
-
 // TailFile begins tailing the file. Output stream is made available
 // via the `Tail.Lines` channel. To handle errors during tailing,
 // invoke the `Wait` or `Err` method after finishing reading from the
@@ -108,11 +96,6 @@ func TailFile(filename string, config Config, w chan bool) (*Tail, error) {
 		WorkLimit: w,
 	}
 	t.Ctx, t.Cancel = context.WithCancel(context.Background())
-
-	// when Logger was not specified in config, use default logger
-	if t.Logger == nil {
-		t.Logger = log.New(os.Stderr, "", log.LstdFlags)
-	}
 
 	if t.Poll {
 		t.watcher = watch.NewPollingFileWatcher(filename)
@@ -132,7 +115,7 @@ func TailFile(filename string, config Config, w chan bool) (*Tail, error) {
 		if err != nil {
 			return nil, err
 		}
-		t.Logger.Printf("start InotifyFileWatcher: %s", filename)
+		log.Printf("start InotifyFileWatcher: %s", filename)
 		t.watcher = watch.NewInotifyFileWatcher(filename, dw, w, t.ReOpenDelay)
 	}
 
@@ -159,13 +142,11 @@ func (tail *Tail) setFile(file *os.File) {
 	defer tail.mu.Unlock()
 	tail.file = file
 }
-
 func (tail *Tail) fileStat() (os.FileInfo, error) {
 	tail.mu.Lock()
 	defer tail.mu.Unlock()
 	return tail.file.Stat()
 }
-
 func (tail *Tail) fileSeek(offset int64, whence int) (ret int64, err error) {
 	tail.mu.Lock()
 	defer tail.mu.Unlock()
@@ -203,7 +184,7 @@ func (tail *Tail) Tell() (offset int64, err error) {
 }
 
 func (tail *Tail) tell() (offset int64, err error) {
-	if tail.getFile == nil {
+	if tail.getFile() == nil {
 		return
 	}
 	offset, err = tail.fileSeek(0, os.SEEK_CUR)
@@ -233,7 +214,7 @@ func (tail *Tail) reopen(ctx context.Context) error {
 		file, err := os.Open(tail.Filename)
 		if err != nil {
 			if os.IsNotExist(err) {
-				tail.Logger.Printf("Waiting for %s to appear...", tail.Filename)
+				log.Printf("Waiting for %s to appear...", tail.Filename)
 				if err := tail.watcher.BlockUntilExists(ctx); err != nil {
 					return fmt.Errorf("Failed to detect creation of %s: %s", tail.Filename, err)
 				}
@@ -279,7 +260,7 @@ func (tail *Tail) tailFileSync() {
 		// deferred first open.
 		err := tail.reopen(tail.Ctx)
 		if err != nil {
-			tail.Logger.Printf("tail.reopen() err: %s", err)
+			log.Printf("tail.reopen() err: %s", err)
 			return
 		}
 	}
@@ -289,9 +270,9 @@ func (tail *Tail) tailFileSync() {
 	if tail.Location != nil {
 		offset = tail.Location.Offset
 		_, err := tail.fileSeek(offset, tail.Location.Whence)
-		tail.Logger.Printf("Seeked %s - %+v\n", tail.Filename, tail.Location)
+		log.Printf("Seeked %s - %+v\n", tail.Filename, tail.Location)
 		if err != nil {
-			tail.Logger.Printf("Seek error on %s: %s", tail.Filename, err)
+			log.Printf("Seek error on %s: %s", tail.Filename, err)
 			return
 		}
 	}
@@ -314,13 +295,13 @@ func (tail *Tail) tailFileSync() {
 			err := tail.waitForChanges(tail.Ctx)
 			if err != nil {
 				if err != ErrStop {
-					tail.Logger.Printf("tail.waitForChanges() err: %s", err)
+					log.Printf("tail.waitForChanges() err: %s", err)
 				}
 				return
 			}
 		} else if err != nil {
 			// non-EOF error
-			tail.Logger.Printf("Error reading %s: %s", tail.Filename, err)
+			log.Printf("Error reading %s: %s", tail.Filename, err)
 			tail.Cancel()
 			return
 		}
@@ -336,7 +317,7 @@ func (tail *Tail) tailFileSync() {
 func (tail *Tail) readSend() error {
 	offset, err := tail.tell()
 	if err != nil {
-		tail.Logger.Printf("tail.tell() err: %s", err)
+		log.Printf("tail.tell() err: %s", err)
 		return err
 	}
 
@@ -346,7 +327,7 @@ func (tail *Tail) readSend() error {
 	if err == nil {
 		err = tail.sendLine(line)
 		if err != nil {
-			tail.Logger.Printf("tail.sendLine() err: %s", err)
+			log.Printf("tail.sendLine() err: %s", err)
 			return err
 		}
 		return nil
@@ -361,7 +342,7 @@ func (tail *Tail) readSend() error {
 		// it's not followed by a newline; seems a fair trade here
 		err := tail.seekTo(SeekInfo{Offset: offset, Whence: 0})
 		if err != nil {
-			tail.Logger.Printf("tail.seekTo() err: %s", err)
+			log.Printf("tail.seekTo() err: %s", err)
 			return err
 		}
 	}
@@ -404,12 +385,12 @@ func (tail *Tail) waitForChanges(ctx context.Context) error {
 					return err
 				}
 				if tail.ReOpen {
-					tail.Logger.Printf("Rotated event file %s. Re-opening ...", tail.Filename)
+					log.Printf("Rotated event file %s. Re-opening ...", tail.Filename)
 					tail.changes = nil
 					if err := tail.reopen(ctx); err != nil {
 						return err
 					}
-					tail.Logger.Printf("Successfully reopened %s", tail.Filename)
+					log.Printf("Successfully reopened %s", tail.Filename)
 					tail.openReader()
 					select {
 					case tail.Lines <- &Line{NotifyType: NewFileNotify, Filename: tail.Filename, Offset: 0, Time: time.Now(), OpenTime: tail.openTime}:
@@ -418,7 +399,7 @@ func (tail *Tail) waitForChanges(ctx context.Context) error {
 					return nil
 				} else {
 					tail.changes = nil
-					tail.Logger.Printf("Stopping tail as file no longer exists: %s", tail.Filename)
+					log.Printf("Stopping tail as file no longer exists: %s", tail.Filename)
 					return ErrStop
 				}
 			default:
