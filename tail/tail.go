@@ -58,6 +58,7 @@ type Config struct {
 	Poll           bool // Poll for file changes instead of using inotify
 	TruncateReOpen bool // copytruncate rotate
 	RenameReOpen   bool // rename rotate
+	LinesChanSize  int  // Lines channel size
 
 	// Generic IO
 	NotifyInterval time.Duration // Notice interval of the elapsed time
@@ -91,7 +92,7 @@ type Tail struct {
 func TailFile(filename string, config Config, w chan bool) (*Tail, error) {
 	t := &Tail{
 		Filename:  filename,
-		Lines:     make(chan *Line),
+		Lines:     make(chan *Line, config.LinesChanSize),
 		Config:    config,
 		WorkLimit: w,
 	}
