@@ -159,7 +159,7 @@ func FtailDBOpen(path string, mode os.FileMode, options *FtailDBOptions, pos *Po
 	var err error
 	if db.file, err = os.OpenFile(db.path, flag|os.O_CREATE, mode); err != nil {
 		_ = db.Close()
-		return nil, err
+		return nil, &InvalidFtailDBError{File: path, S: err.Error()}
 	}
 	db.Pos, db.PosError = db.readHeader()
 	if db.PosError == io.EOF {
@@ -168,18 +168,18 @@ func FtailDBOpen(path string, mode os.FileMode, options *FtailDBOptions, pos *Po
 			return nil, &InvalidFtailDBError{File: path, S: "new file pos is nil"}
 		}
 		if err := db.writeHeader(pos); err != nil {
-			return nil, err
+			return nil, &InvalidFtailDBError{File: path, S: err.Error()}
 		}
 	} else if db.PosError != nil {
-		return nil, db.PosError
+		return nil, &InvalidFtailDBError{File: path, S: db.PosError.Error()}
 	}
 	if db.readOnly {
 		if db.Pos == nil {
-			return nil, fmt.Errorf("Unable to get the position. file:%s", path)
+			return nil, &InvalidFtailDBError{File: path, S: fmt.Sprintf("Unable to get the position. file:%s", path)}
 		}
 		return db, nil
 	} else if db.Pos, db.PosError = db.lastPostion(*db.Pos); db.PosError != nil {
-		return nil, db.PosError
+		return nil, &InvalidFtailDBError{File: path, S: db.PosError.Error()}
 	}
 	return db, nil
 }
