@@ -81,7 +81,7 @@ func (f *Ftail) position(c Config) (pos *core.Position, err error) {
 	}
 	offset := int64(0)
 	// 現在のファイルサイズがf.MaxHeadHashSizeより大きいものだけオフセットを現在のサイズにする。
-	if fi.Size() > f.MaxHeadHashSize {
+	if (!c.Config.NoSeek) && (fi.Size() > f.MaxHeadHashSize) {
 		offset = fi.Size()
 	}
 	pos = &core.Position{

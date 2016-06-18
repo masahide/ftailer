@@ -25,6 +25,7 @@ type Config struct {
 	Delay         time.Duration // 切り替えwait
 	LinesChanSize int           // Lines channel size
 	//Pos           *core.Position
+	NoSeek bool // 有効にするとポジション情報がない時に先頭から読み直す
 
 	tail.Config
 }
