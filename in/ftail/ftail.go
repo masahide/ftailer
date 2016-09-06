@@ -25,6 +25,7 @@ type Config struct {
 	BufDir          string
 	Period          time.Duration // 分割保存インターバル
 	MaxHeadHashSize int64
+	MaxBufSize      int
 
 	tailex.Config
 }
@@ -185,7 +186,15 @@ func (f *Ftail) lineNotifyAction(ctx context.Context, line *tail.Line, w chan bo
 	var err error
 
 	if line.NotifyType == tail.NewLineNotify { // 新しいライン
-		return f.Write(line)
+		if err = f.Write(line); err != nil {
+			return err
+		}
+		if f.buf.Len() < f.MaxBufSize {
+			return err
+		}
+		w <- true
+		defer func() { <-w }()
+		return f.Flush()
 	}
 	w <- true
 	defer func() { <-w }()
