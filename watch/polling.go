@@ -72,7 +72,7 @@ func (fw *PollingFileWatcher) ChangeEvents(ctx context.Context, origFi os.FileIn
 			if err != nil {
 				if os.IsNotExist(err) {
 					// File does not exist (has been deleted).
-					changes.NotifyRotated()
+					changes.NotifyRotated(ctx)
 					return
 				}
 
@@ -86,14 +86,14 @@ func (fw *PollingFileWatcher) ChangeEvents(ctx context.Context, origFi os.FileIn
 
 			// File got moved/renamed?
 			if !os.SameFile(origFi, fi) {
-				changes.NotifyRotated()
+				changes.NotifyRotated(ctx)
 				return
 			}
 
 			// File got truncated?
 			fw.Size = fi.Size()
 			if prevSize > 0 && prevSize > fw.Size {
-				changes.NotifyRotated()
+				changes.NotifyRotated(ctx)
 				prevSize = fw.Size
 				continue
 			}
@@ -103,7 +103,7 @@ func (fw *PollingFileWatcher) ChangeEvents(ctx context.Context, origFi os.FileIn
 			modTime := fi.ModTime()
 			if modTime != prevModTime {
 				prevModTime = modTime
-				changes.NotifyModified()
+				changes.NotifyModified(ctx)
 			}
 		}
 	}()

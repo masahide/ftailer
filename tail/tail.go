@@ -89,24 +89,24 @@ type Tail struct {
 // via the `Tail.Lines` channel. To handle errors during tailing,
 // invoke the `Wait` or `Err` method after finishing reading from the
 // `Lines` channel.
-func TailFile(filename string, config Config, w chan bool) (*Tail, error) {
+func TailFile(ctx context.Context, filename string, config Config, w chan bool) (*Tail, error) {
 	t := &Tail{
 		Filename:  filename,
 		Lines:     make(chan *Line, config.LinesChanSize),
 		Config:    config,
 		WorkLimit: w,
 	}
-	t.Ctx, t.Cancel = context.WithCancel(context.Background())
+	t.Ctx, t.Cancel = context.WithCancel(ctx)
 
 	if t.Poll {
 		t.watcher = watch.NewPollingFileWatcher(filename)
 	} else {
 		t.tracker = watch.NewInotifyTracker()
-		w, err := t.tracker.NewWatcher()
+		w, err := t.tracker.NewWatcher(ctx)
 		if err != nil {
 			return nil, err
 		}
-		dw, err := t.tracker.NewWatcher()
+		dw, err := t.tracker.NewWatcher(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -398,11 +398,10 @@ func (tail *Tail) waitForChanges(ctx context.Context) error {
 					case <-ctx.Done():
 					}
 					return nil
-				} else {
-					tail.changes = nil
-					log.Printf("Stopping tail as file no longer exists: %s", tail.Filename)
-					return ErrStop
 				}
+				tail.changes = nil
+				log.Printf("Stopping tail as file no longer exists: %s", tail.Filename)
+				return ErrStop
 			default:
 				log.Printf("tail.changes.Modified: mode:%v", mode)
 				if err := tail.readSendAll(); err != nil {
@@ -472,9 +471,9 @@ func (tail *Tail) sendLine(line []byte) error {
 // Cleanup removes inotify watches added by the tail package. This function is
 // meant to be invoked from a process's exit handler. Linux kernel may not
 // automatically remove inotify watches after the process exits.
-func (tail *Tail) Cleanup() {
+func (tail *Tail) Cleanup(ctx context.Context) {
 	if tail.tracker != nil {
-		tail.tracker.CloseAll()
+		tail.tracker.CloseAll(ctx)
 	}
 	tail.Cancel()
 }
