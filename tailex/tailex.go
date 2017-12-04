@@ -107,9 +107,17 @@ func (c *TailEx) GlobSearchLoop(ctx context.Context, pathFmt string) (string, er
 	firstFlag := true
 	for {
 		globPath := Time2Path(pathFmt, c.timeSlice)
-		c.WorkLimit <- true
+		select {
+		case c.WorkLimit <- true:
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
 		s, err := GlobSearch(globPath)
-		<-c.WorkLimit
+		select {
+		case <-c.WorkLimit:
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
 		if err == nil {
 			return s, nil // 見つかった
 		} else if err != ErrNoSuchFile {
@@ -129,6 +137,7 @@ func (c *TailEx) GlobSearchLoop(ctx context.Context, pathFmt string) (string, er
 		select {
 		case c.Lines <- &tail.Line{NotifyType: GlobLoopNotify, Time: time.Now()}:
 		case <-ctx.Done():
+			return "", ctx.Err()
 		}
 		// timeSliceが過去なら進める
 		if Truncate(time.Now(), c.RotatePeriod).Sub(c.timeSlice) > 0 {
