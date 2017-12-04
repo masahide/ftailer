@@ -74,7 +74,7 @@ func (db *DB) Create(ext string, pos *Position) error {
 		db.FtailDB = nil
 		return err
 	}
-	log.Printf("DB was created. %s", db.RealFilePath)
+	//log.Printf("DB was created. %s", db.RealFilePath)
 	return err
 }
 
@@ -89,7 +89,7 @@ func (db *DB) Open(ext string, pos *Position) error {
 		db.FtailDB = nil
 		return err
 	}
-	log.Printf("DB was opened.  %s", db.RealFilePath)
+	//log.Printf("DB was opened.  %s", db.RealFilePath)
 	return err
 }
 
@@ -119,8 +119,8 @@ func (db *DB) Close(fix bool) error {
 			return err
 		}
 		log.Printf("DB was closed.  %s -> %s", recFilePath, fixFilePath)
-	} else {
-		log.Printf("DB was closed.  %s", recFilePath)
+		//} else {
+		//	log.Printf("DB was closed.  %s", recFilePath)
 	}
 	return nil
 }

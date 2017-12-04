@@ -125,7 +125,7 @@ func Start(ctx context.Context, c Config, w chan bool) error {
 	if f.Delay != 0 {
 		f.ReOpenDelay = f.Delay
 	}
-	log.Printf("f.Pos: %s", f.Pos)
+	//log.Printf("f.Pos: %s", f.Pos)
 
 	if f.MaxHeadHashSize != 0 && f.Pos.Name != "" {
 		oldhead := f.head
@@ -273,7 +273,7 @@ func (f *Ftail) addHash(line []byte) error {
 	f.head = append(f.head, line...)
 	f.Pos.HeadHash = strconv.FormatUint(f.headHash.Sum64(), 16)
 	f.Pos.HashLength += int64(written)
-	log.Printf("addHash name:%s Pos:%s, head:%s", f.Name, f.Pos, string(f.head))
+	//log.Printf("addHash name:%s Pos:%s, head:%s", f.Name, f.Pos, string(f.head))
 	return nil
 }
 

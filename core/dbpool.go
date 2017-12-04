@@ -62,7 +62,7 @@ func (r *DBpool) openPool(t time.Time) (*DB, Position, error) {
 // CreateDB
 func (r *DBpool) CreateDB(t time.Time, pos *Position) (*DB, error) {
 	if r.inTime.Sub(t) > 0 {
-		log.Printf("%s. 'inTime:%s > baseTime:%s'", ErrTimePast, r.inTime, t)
+		//log.Printf("%s. 'inTime:%s > baseTime:%s'", ErrTimePast, r.inTime, t)
 		return nil, ErrTimePast
 	}
 	db, ok := r.dbs[t]
@@ -95,7 +95,7 @@ func (r *DBpool) Put(row Row) error {
 	baseTime := row.Time.Truncate(r.Period)
 	//log.Printf("inTime:%s baseTime:%s", r.inTime, baseTime) //TODO: test
 	if r.inTime.Sub(baseTime) > 0 {
-		log.Printf("%s. 'inTime:%s > baseTime:%s'", ErrTimePast, r.inTime, baseTime)
+		//log.Printf("%s. 'inTime:%s > baseTime:%s'", ErrTimePast, r.inTime, baseTime)
 		return ErrTimePast
 	}
 	if r.inTime.Sub(baseTime) < 0 {
@@ -148,7 +148,7 @@ func (r *DBpool) CloseOldDbs(t time.Time) (int, error) {
 	for k, db := range r.dbs {
 		elapsed := db.Time.Add(r.Period + delay).Sub(t)
 		if elapsed <= 0 {
-			log.Printf("Closed the DB files of old time. wait:%v t:%s", elapsed, db.Time)
+			//log.Printf("Closed the DB files of old time. wait:%v t:%s", elapsed, db.Time)
 			if err := db.Close(true); err != nil {
 				log.Printf("db.Close err:%s", err)
 				return len(r.dbs), err
