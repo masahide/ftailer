@@ -1,6 +1,7 @@
 package tailex
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -9,7 +10,6 @@ import (
 	"time"
 
 	"github.com/masahide/ftailer/tail"
-	"golang.org/x/net/context"
 )
 
 var ErrNoSuchFile = errors.New("No such file.")

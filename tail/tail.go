@@ -2,6 +2,7 @@ package tail
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -9,8 +10,6 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
-
-	"golang.org/x/net/context"
 
 	"github.com/masahide/ftailer/watch"
 )

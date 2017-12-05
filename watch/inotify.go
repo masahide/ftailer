@@ -1,6 +1,7 @@
 package watch
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -8,7 +9,6 @@ import (
 	"time"
 
 	"github.com/masahide/fsnotify"
-	"golang.org/x/net/context"
 )
 
 // InotifyFileWatcher uses inotify to monitor file changes.

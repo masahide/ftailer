@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"sync"
 	"time"
@@ -8,7 +9,6 @@ import (
 	"github.com/masahide/ftailer/in/ftail"
 	"github.com/masahide/ftailer/tail"
 	"github.com/masahide/ftailer/tailex"
-	"golang.org/x/net/context"
 )
 
 /*

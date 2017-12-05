@@ -1,11 +1,10 @@
 package watch
 
 import (
+	"context"
 	"log"
 	"os"
 	"time"
-
-	"golang.org/x/net/context"
 )
 
 // PollingFileWatcher polls the file for changes.

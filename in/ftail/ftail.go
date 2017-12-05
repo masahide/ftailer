@@ -3,6 +3,7 @@ package ftail
 import (
 	"bytes"
 	"compress/zlib"
+	"context"
 	"hash"
 	"hash/fnv"
 	"io"
@@ -15,7 +16,6 @@ import (
 	"github.com/masahide/ftailer/core"
 	"github.com/masahide/ftailer/tail"
 	"github.com/masahide/ftailer/tailex"
-	"golang.org/x/net/context"
 )
 
 //const defaultMaxHeadHashSize = 1024

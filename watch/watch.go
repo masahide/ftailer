@@ -3,9 +3,8 @@
 package watch
 
 import (
+	"context"
 	"os"
-
-	"golang.org/x/net/context"
 )
 
 // FileWatcher monitors file-level events.
