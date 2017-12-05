@@ -37,9 +37,10 @@ func TestDBMakeFilefullPath(t *testing.T) {
 }
 
 func TestEncodeRowDecodeRow(t *testing.T) {
+	now := time.Now().Truncate(time.Second)
 	testDatas := []Row{
 		{Pos: &Position{}},
-		{Time: time.Now(), Pos: &Position{Name: "hoge", CreateAt: time.Now()}},
+		{Time: now, Pos: &Position{Name: "hoge", CreateAt: now}},
 	}
 	for _, testData := range testDatas {
 		data, err := encodeRow(testData)
@@ -52,7 +53,7 @@ func TestEncodeRowDecodeRow(t *testing.T) {
 			t.Error(err)
 		}
 		if *row.Pos != *testData.Pos {
-			t.Errorf("row.Pos:(%v) != testData.Pos:(%v)", row.Pos, testData.Pos)
+			t.Errorf("row.Pos:(%#v) != testData.Pos:(%#v)", row.Pos, testData.Pos)
 		}
 	}
 }
