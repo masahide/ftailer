@@ -130,7 +130,7 @@ func (fw *InotifyFileWatcher) changeEventsWorker(ctx context.Context, changes *F
 			}
 		case <-CreateTimer:
 			log.Printf("IsCreate timeout: %s", fwFilename)
-			changes.NotifyRotated(ctx) //IsCreateからタイムアウトしたら強制rotate
+			changes.NotifyRotated() //IsCreateからタイムアウトしたら強制rotate
 			return
 		}
 
@@ -138,11 +138,11 @@ func (fw *InotifyFileWatcher) changeEventsWorker(ctx context.Context, changes *F
 		case evt.IsCloseWrite():
 			if inCreate {
 				log.Printf("Received IsCreate & IsCloseWrite: %s", fwFilename)
-				changes.NotifyRotated(ctx)
+				changes.NotifyRotated()
 				return
 			}
 		case evt.IsModify():
-			changes.NotifyModified(ctx)
+			changes.NotifyModified()
 		}
 	}
 

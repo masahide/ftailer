@@ -89,7 +89,7 @@ func (c *TailEx) tailFileSyncLoop(ctx context.Context) {
 		//
 		tailFileSyncErr := c.tailFileSync(ctx)
 
-		c.tail.Cleanup(ctx) //  古い方をcleanup
+		c.tail.Cleanup() //  古い方をcleanup
 		//log.Printf("TailEx end tail.cleanup %s:%s", c.Path, c.timeSlice)
 		c.tail = nil
 		//c.Pos.Offset = 0
@@ -107,17 +107,9 @@ func (c *TailEx) GlobSearchLoop(ctx context.Context, pathFmt string) (string, er
 	firstFlag := true
 	for {
 		globPath := Time2Path(pathFmt, c.timeSlice)
-		select {
-		case c.WorkLimit <- true:
-		case <-ctx.Done():
-			return "", ctx.Err()
-		}
+		c.WorkLimit <- true
 		s, err := GlobSearch(globPath)
-		select {
-		case <-c.WorkLimit:
-		case <-ctx.Done():
-			return "", ctx.Err()
-		}
+		<-c.WorkLimit
 		if err == nil {
 			return s, nil // 見つかった
 		} else if err != ErrNoSuchFile {
@@ -134,11 +126,7 @@ func (c *TailEx) GlobSearchLoop(ctx context.Context, pathFmt string) (string, er
 		case <-time.After(1 * time.Second):
 		}
 
-		select {
-		case c.Lines <- &tail.Line{NotifyType: GlobLoopNotify, Time: time.Now()}:
-		case <-ctx.Done():
-			return "", ctx.Err()
-		}
+		c.Lines <- &tail.Line{NotifyType: GlobLoopNotify, Time: time.Now()}
 		// timeSliceが過去なら進める
 		if Truncate(time.Now(), c.RotatePeriod).Sub(c.timeSlice) > 0 {
 			next := c.timeSlice.Add(c.RotatePeriod)
@@ -218,10 +206,7 @@ func (c *TailEx) tailFileSync(ctx context.Context) error {
 					return nil
 				}
 			}
-			select {
-			case c.Lines <- l:
-			case <-ctx.Done():
-			}
+			c.Lines <- l
 			/*
 				case createAt := <-c.tail.OpenTime:
 					fi := FileInfo{Path: c.filePath, CreateAt: createAt}
