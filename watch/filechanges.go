@@ -1,9 +1,6 @@
 package watch
 
-import (
-	"context"
-	"log"
-)
+import "log"
 
 type FileChanges struct {
 	Modified chan int // Channel to get notified of modifications
@@ -27,18 +24,12 @@ func NewFileChanges() *FileChanges {
 	}
 }
 
-func (fc *FileChanges) NotifyRotated(ctx context.Context) {
-	select {
-	case <-ctx.Done():
-	case fc.Modified <- Rotated:
-	}
+func (fc *FileChanges) NotifyRotated() {
+	fc.Modified <- Rotated
 
 }
-func (fc *FileChanges) NotifyModified(ctx context.Context) {
-	select {
-	case <-ctx.Done():
-	case fc.Modified <- Modified:
-	}
+func (fc *FileChanges) NotifyModified() {
+	fc.Modified <- Modified
 }
 
 /*

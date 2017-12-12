@@ -94,11 +94,7 @@ func (f *Ftail) position(c Config) (pos *core.Position, err error) {
 }
 
 func Start(ctx context.Context, c Config, w chan bool) error {
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case w <- true:
-	}
+	w <- true
 	f := &Ftail{
 		Config:   c,
 		headHash: fnv.New64(),
@@ -159,11 +155,7 @@ func Start(ctx context.Context, c Config, w chan bool) error {
 			log.Fatalln("NewZlibWriter err:", err)
 		}
 	*/
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-w:
-	}
+	<-w
 	f.Writer = NopCloser(&f.buf)
 	defer func() {
 		if err := f.Flush(); err != nil {
@@ -200,29 +192,12 @@ func (f *Ftail) lineNotifyAction(ctx context.Context, line *tail.Line, w chan bo
 		if f.buf.Len() < f.MaxBufSize {
 			return err
 		}
-		select {
-		case w <- true:
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-		defer func() {
-			select {
-			case <-ctx.Done():
-			case <-w:
-			}
-		}()
+		w <- true
+		defer func() { <-w }()
 		return f.Flush()
 	}
-	select {
-	case <-ctx.Done():
-	case w <- true:
-	}
-	defer func() {
-		select {
-		case <-ctx.Done():
-		case <-w:
-		}
-	}()
+	w <- true
+	defer func() { <-w }()
 	switch line.NotifyType {
 	case tail.TickerNotify, tailex.GlobLoopNotify: // 定期flush処理
 		if err := f.Flush(); err != nil {

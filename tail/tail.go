@@ -101,11 +101,11 @@ func TailFile(ctx context.Context, filename string, config Config, w chan bool) 
 		t.watcher = watch.NewPollingFileWatcher(filename)
 	} else {
 		t.tracker = watch.NewInotifyTracker()
-		w, err := t.tracker.NewWatcher(ctx)
+		w, err := t.tracker.NewWatcher()
 		if err != nil {
 			return nil, err
 		}
-		dw, err := t.tracker.NewWatcher(ctx)
+		dw, err := t.tracker.NewWatcher()
 		if err != nil {
 			return nil, err
 		}
@@ -229,17 +229,8 @@ func (tail *Tail) reopen(ctx context.Context) error {
 }
 
 func (tail *Tail) readLine() ([]byte, error) {
-	select {
-	case tail.WorkLimit <- true:
-	case <-tail.Ctx.Done():
-		return nil, tail.Ctx.Err()
-	}
-	defer func() {
-		select {
-		case <-tail.WorkLimit:
-		case <-tail.Ctx.Done():
-		}
-	}()
+	tail.WorkLimit <- true
+	defer func() { <-tail.WorkLimit }()
 	line, err := tail.readerReadBytes(byte('\n'))
 	if err != nil {
 		// Note ReadString "returns the data read before the error" in
@@ -479,9 +470,9 @@ func (tail *Tail) sendLine(line []byte) error {
 // Cleanup removes inotify watches added by the tail package. This function is
 // meant to be invoked from a process's exit handler. Linux kernel may not
 // automatically remove inotify watches after the process exits.
-func (tail *Tail) Cleanup(ctx context.Context) {
+func (tail *Tail) Cleanup() {
 	if tail.tracker != nil {
-		tail.tracker.CloseAll(ctx)
+		tail.tracker.CloseAll()
 	}
 	tail.Cancel()
 }
