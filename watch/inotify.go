@@ -123,11 +123,20 @@ func (fw *InotifyFileWatcher) changeEventsWorker(ctx context.Context, changes *F
 				CreateTimer = time.After(fw.delay)
 				continue
 			}
-
+		case err, ok := <-fw.dw.Error: // ディレクトリ監視イベント
+			if !ok {
+				return
+			}
+			log.Printf("fw.Filename=%s, fw.dw.Error:%s", fw.Filename, err)
 		case evt, ok = <-fw.w.Event: // ファイル監視イベント
 			if !ok {
 				return
 			}
+		case err, ok := <-fw.w.Error: // ファイル監視イベント
+			if !ok {
+				return
+			}
+			log.Printf("fw.Filename=%s, fw.w.Error:%s", fw.Filename, err)
 		case <-CreateTimer:
 			log.Printf("IsCreate timeout: %s", fwFilename)
 			changes.NotifyRotated(ctx) //IsCreateからタイムアウトしたら強制rotate

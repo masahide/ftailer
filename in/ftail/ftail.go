@@ -93,11 +93,11 @@ func (f *Ftail) position(c Config) (pos *core.Position, err error) {
 	return
 }
 
-func Start(ctx context.Context, c Config, w chan bool) error {
+func Start(ctx context.Context, c Config, workerLimit chan bool) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case w <- true:
+	case workerLimit <- true:
 	}
 	f := &Ftail{
 		Config:   c,
@@ -150,7 +150,7 @@ func Start(ctx context.Context, c Config, w chan bool) error {
 			f.Location = &tail.SeekInfo{Offset: f.Pos.Offset}
 		}
 	}
-	t := tailex.NewTailEx(ctx, f.Config.Config, w)
+	t := tailex.NewTailEx(ctx, f.Config.Config, workerLimit)
 	//var buf bytes.Buffer
 	f.buf = bytes.Buffer{}
 	/*
@@ -159,11 +159,7 @@ func Start(ctx context.Context, c Config, w chan bool) error {
 			log.Fatalln("NewZlibWriter err:", err)
 		}
 	*/
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-w:
-	}
+	<-workerLimit
 	f.Writer = NopCloser(&f.buf)
 	defer func() {
 		if err := f.Flush(); err != nil {
@@ -179,7 +175,7 @@ func Start(ctx context.Context, c Config, w chan bool) error {
 			if !ok {
 				return err
 			}
-			err := f.lineNotifyAction(ctx, line, w)
+			err := f.lineNotifyAction(ctx, line, workerLimit)
 			if err != nil {
 				return err
 			}
@@ -190,7 +186,7 @@ func Start(ctx context.Context, c Config, w chan bool) error {
 }
 
 // lineのNotifyType別に処理を分岐
-func (f *Ftail) lineNotifyAction(ctx context.Context, line *tail.Line, w chan bool) error {
+func (f *Ftail) lineNotifyAction(ctx context.Context, line *tail.Line, workerLimit chan bool) error {
 	var err error
 
 	if line.NotifyType == tail.NewLineNotify { // 新しいライン
@@ -201,28 +197,18 @@ func (f *Ftail) lineNotifyAction(ctx context.Context, line *tail.Line, w chan bo
 			return err
 		}
 		select {
-		case w <- true:
+		case workerLimit <- true:
+			defer func() { <-workerLimit }()
 		case <-ctx.Done():
 			return ctx.Err()
 		}
-		defer func() {
-			select {
-			case <-ctx.Done():
-			case <-w:
-			}
-		}()
 		return f.Flush()
 	}
 	select {
 	case <-ctx.Done():
-	case w <- true:
+	case workerLimit <- true:
+		defer func() { <-workerLimit }()
 	}
-	defer func() {
-		select {
-		case <-ctx.Done():
-		case <-w:
-		}
-	}()
 	switch line.NotifyType {
 	case tail.TickerNotify, tailex.GlobLoopNotify: // 定期flush処理
 		if err := f.Flush(); err != nil {

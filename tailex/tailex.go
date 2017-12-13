@@ -113,11 +113,7 @@ func (c *TailEx) GlobSearchLoop(ctx context.Context, pathFmt string) (string, er
 			return "", ctx.Err()
 		}
 		s, err := GlobSearch(globPath)
-		select {
-		case <-c.WorkLimit:
-		case <-ctx.Done():
-			return "", ctx.Err()
-		}
+		<-c.WorkLimit
 		if err == nil {
 			return s, nil // 見つかった
 		} else if err != ErrNoSuchFile {

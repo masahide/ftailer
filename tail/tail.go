@@ -231,15 +231,10 @@ func (tail *Tail) reopen(ctx context.Context) error {
 func (tail *Tail) readLine() ([]byte, error) {
 	select {
 	case tail.WorkLimit <- true:
+		defer func() { <-tail.WorkLimit }()
 	case <-tail.Ctx.Done():
 		return nil, tail.Ctx.Err()
 	}
-	defer func() {
-		select {
-		case <-tail.WorkLimit:
-		case <-tail.Ctx.Done():
-		}
-	}()
 	line, err := tail.readerReadBytes(byte('\n'))
 	if err != nil {
 		// Note ReadString "returns the data read before the error" in
